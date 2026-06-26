@@ -1,6 +1,8 @@
-node_modules/
+# Local environment secrets
+.env
+.env.local
+.env.*.local
+
+# Next.js build tokens
 .next/
-out/
-build/
-.env*.local
-.DS_Store
+node_modules/

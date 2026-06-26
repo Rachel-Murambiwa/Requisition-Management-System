@@ -8,10 +8,11 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'uc-navy': '#0A1628',
-        'uc-navy-light': '#1A2E4A',
-        'uc-blue': '#1D4ED8',
-        'uc-blue-light': '#EFF6FF',
+        'white': '#FFFFFF',
+        'uc-blue': '#0747A1',
+      },
+      fontFamily: {
+        avenir: ['var(--font-avenir)', 'sans-serif'],
       },
     },
   },

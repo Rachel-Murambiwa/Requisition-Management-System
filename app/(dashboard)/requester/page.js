@@ -1,321 +1,197 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import NotificationCenter from '@/components/layout/NotificationCenter';
 import { 
   Plus, 
-  Search, 
   Clock, 
   CheckCircle2, 
-  AlertCircle, 
+  XCircle, 
+  FileText, 
   ArrowUpRight, 
-  LogOut 
+  Loader2,
+  LogOut
 } from 'lucide-react';
-
-// Mock dataset reflecting operational realities across different Innovation Hubs
-const INITIAL_REQUISITIONS = [
-  {
-    id: "REQ-2026-001",
-    title: "inverter battery replacements - bulawayo hub",
-    amount: 1450.00,
-    date: "jun 10, 2026",
-    category: "hub equipment & hardware",
-    stage: "finance review",
-    status: "pending"
-  },
-  {
-    id: "REQ-2026-002",
-    title: "syllabus printing & learning materials",
-    amount: 320.00,
-    date: "jun 08, 2026",
-    category: "workshop & classroom supplies",
-    stage: "disbursed",
-    status: "approved"
-  },
-  {
-    id: "REQ-2026-003",
-    title: "fiber internet monthly subscription - harare hq",
-    amount: 250.00,
-    date: "jun 01, 2026",
-    category: "internet, data & utilities",
-    stage: "completed",
-    status: "approved"
-  },
-  {
-    id: "REQ-2026-004",
-    title: "marketing banners for tech recruitment drive",
-    amount: 180.00,
-    date: "may 28, 2026",
-    category: "marketing & community outreach",
-    stage: "hub manager review",
-    status: "rejected"
-  }
-];
 
 export default function RequesterDashboard() {
   const router = useRouter();
-  const supabase = createClient();
-  
-  const [requisitions, setRequisitions] = useState(INITIAL_REQUISITIONS);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const [supabase] = useState(() => createClient());
+
+  const [activeUser, setActiveUser] = useState({ name: 'staff member', hub: 'harare' });
+  const [requisitions, setRequisitions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadWorkspaceTelemetry() {
+      try {
+        setLoading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setActiveUser({
+            name: user.user_metadata?.name || 'staff member',
+            hub: user.user_metadata?.hub_name || 'harare'
+          });
+
+          const { data: records, error } = await supabase
+            .from('requisitions')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (error) throw error;
+          if (records) setRequisitions(records);
+        }
+      } catch (err) {
+        console.error("Dashboard telemetry synchronization fault:", err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadWorkspaceTelemetry();
+  }, [supabase]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
 
-  // Metric Calculation Aggregations
-  const totalRequested = requisitions.reduce((acc, curr) => acc + (curr.status !== 'rejected' ? curr.amount : 0), 0);
-  const pendingCount = requisitions.filter(r => r.status === 'pending').length;
-  const approvedCount = requisitions.filter(r => r.status === 'approved').length;
+  const totalSpent = requisitions
+    .filter(r => r.status?.toLowerCase() === 'approved')
+    .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // Search & Filter Processing
-  const filteredRequisitions = requisitions.filter(req => {
-    const matchesSearch = req.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          req.id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === "all") return matchesSearch;
-    return matchesSearch && req.status === activeTab;
-  });
+  const pendingCount = requisitions.filter(r => r.status?.toLowerCase() === 'pending').length;
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans">
+    <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-16">
       
-      {/* Universal Workspace Navigation Header */}
-      <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
+      {/* Top Navigation Frame */}
+      <nav className="w-full bg-[#0A1628] text-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          
-          {/* Logo Assembly */}
           <div className="flex items-center gap-2 select-none">
-            <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">
-              uncommon
-            </span>
-            <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded-badge tracking-wider uppercase">
-              rms
-            </span>
+            <span className="text-xl font-bold tracking-tight">uncommon</span>
+            <span className="text-[10px] bg-[#0747A1] text-white font-semibold px-1.5 py-0.5 rounded uppercase">requester panel</span>
           </div>
 
-          {/* User Meta & Session Control Actions */}
-          <div className="flex items-center gap-6">
-            <div className="hidden sm:flex items-center gap-3 text-right">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-[#0A1628]">Chacha</span>
-                <span className="text-xs text-[#4B5563] lowercase">harare hub • requester</span>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block text-xs font-semibold text-slate-300 lowercase">
+              <div>{activeUser.name}</div>
+              <div className="text-[10px] text-slate-400">{activeUser.hub} hub</div>
             </div>
-            
-            <div className="h-8 w-px bg-[#E5E7EB] hidden sm:block" />
-
-            <button 
-              onClick={handleSignOut}
-              className="flex items-center gap-2 text-sm font-medium text-[#4B5563] hover:text-[#991B1B] transition-colors group focus:outline-none"
-            >
-              <LogOut className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#991B1B] transition-colors" />
-              <span className="hidden sm:inline lowercase">sign out</span>
+            <NotificationCenter role="requester" />
+            <div className="h-6 w-px bg-slate-700" />
+            <button onClick={handleSignOut} className="text-slate-400 hover:text-red-400 transition-colors bg-transparent border-none cursor-pointer">
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
-
         </div>
       </nav>
 
-      {/* Main Workspace Frame */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {/* Main Container Layout */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         
-        {/* Workspace Greeting & Top Actions Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-200 pb-6 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-[#0A1628] tracking-tight lowercase">
-              requisitions overview
-            </h1>
-            <p className="text-sm text-[#4B5563] mt-1">
-              track, audit, and submit fund requests for your innovation hub projects
-            </p>
+            <h1 className="text-3xl font-bold text-[#0A1628] tracking-tight lowercase">operational dispatch queue</h1>
+            <p className="text-sm text-[#4B5563] mt-1">monitor funding cycles, view validation pipeline logs, and dispatch requests</p>
           </div>
 
-          <button
+          {/* 🔗 FIXED PATH: Points cleanly inside your requisitions route folder tree */}
+          <button 
             onClick={() => router.push('/requester/requisitions/new')}
-            className="inline-flex items-center justify-center gap-2 py-2.5 px-5 bg-[#1D4ED8] hover:bg-[#1e40af] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer select-none lowercase self-start sm:self-auto"
+            className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 bg-[#0747A1] hover:opacity-95 text-white text-xs font-bold uppercase tracking-wider rounded-md shadow-sm border-none cursor-pointer transition-opacity"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>new requisition</span>
+            <Plus className="w-4 h-4" /> initialize new request
           </button>
         </div>
 
-        {/* Analytical Aggregation Cards Grid Layout */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-10">
-          
-          {/* Card 1: Cumulative Financial Outflow Allocation */}
-          <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 flex flex-col justify-between shadow-sm">
-            <span className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-              active allocation
-            </span>
-            <div className="flex items-baseline gap-1 mt-4">
-              <span className="text-3xl font-bold text-[#0A1628]">${totalRequested.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <span className="text-xs text-[#9CA3AF] mt-2 normal-case">excluding rejected items</span>
+        {loading ? (
+          <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
+            <Loader2 className="w-8 h-8 text-[#0747A1] animate-spin" />
+            <span>compiling matching requisition indices...</span>
           </div>
-
-          {/* Card 2: Queued Verification Pipeline Volume */}
-          <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 flex flex-col justify-between shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                pending approvals
-              </span>
-              <Clock className="w-4 h-4 text-[#D97706]" />
-            </div>
-            <div className="flex items-baseline gap-1 mt-4">
-              <span className="text-3xl font-bold text-[#0A1628]">{pendingCount}</span>
-              <span className="text-sm font-medium text-[#4B5563] lowercase ml-1">items queued</span>
-            </div>
-            <span className="text-xs text-[#9CA3AF] mt-2 normal-case">awaiting signature matrices</span>
-          </div>
-
-          {/* Card 3: Disbursed & Completed Approvals */}
-          <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 flex flex-col justify-between shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                approved payloads
-              </span>
-              <CheckCircle2 className="w-4 h-4 text-[#059669]" />
-            </div>
-            <div className="flex items-baseline gap-1 mt-4">
-              <span className="text-3xl font-bold text-[#0A1628]">{approvedCount}</span>
-              <span className="text-sm font-medium text-[#4B5563] lowercase ml-1">completed</span>
-            </div>
-            <span className="text-xs text-[#9CA3AF] mt-2 normal-case">passed to cash desk systems</span>
-          </div>
-
-        </div>
-
-        {/* Control Filters & Tab Filtering Assembly */}
-        <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm overflow-hidden">
-          
-          {/* Filtering Control Bar Container */}
-          <div className="p-5 border-b border-[#E5E7EB] flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white">
-            
-            {/* Filter Status Selector Tabs */}
-            <div className="flex border border-[#E5E7EB] rounded-md p-1 bg-[#F9FAFB] self-start">
-              {['all', 'pending', 'approved', 'rejected'].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors lowercase whitespace-nowrap focus:outline-none ${
-                    activeTab === tab
-                      ? 'bg-white text-[#1D4ED8] shadow-sm font-semibold'
-                      : 'text-[#4B5563] hover:text-[#0A1628]'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
+        ) : (
+          <>
+            {/* Quick Analytics Analytics Stream Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-xs font-semibold text-gray-500">
+              <div className="bg-white border border-[#E5E7EB] rounded-lg p-5 shadow-sm">
+                <div className="uppercase tracking-wider text-[10px] text-gray-400">total records dispatched</div>
+                <div className="text-3xl font-black text-[#0A1628] mt-2 font-mono">{requisitions.length} <span className="text-xs font-normal text-gray-400">entries</span></div>
+              </div>
+              <div className="bg-white border border-[#E5E7EB] rounded-lg p-5 shadow-sm">
+                <div className="uppercase tracking-wider text-[10px] text-gray-400 flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-amber-500" /> pending review pipelines</div>
+                <div className="text-3xl font-black text-amber-600 mt-2 font-mono">{pendingCount} <span className="text-xs font-normal text-gray-400">in audit</span></div>
+              </div>
+              <div className="bg-white border border-[#E5E7EB] rounded-lg p-5 shadow-sm">
+                <div className="uppercase tracking-wider text-[10px] text-gray-400 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> released operational capital</div>
+                <div className="text-3xl font-black text-green-700 mt-2 font-mono">${totalSpent.toFixed(2)} <span className="text-xs font-normal text-gray-400">usd</span></div>
+              </div>
             </div>
 
-            {/* Interactive Query Input Field */}
-            <div className="relative flex items-center max-w-md w-full">
-              <Search className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="search by id or title description..."
-                className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] transition-all font-sans"
-              />
+            {/* Core Requisitions Historical Ledger Block Grid */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm overflow-hidden">
+              {requisitions.length === 0 ? (
+                <div className="p-16 text-center text-gray-400 lowercase font-medium text-xs space-y-2">
+                  <FileText className="w-10 h-10 mx-auto text-gray-300 stroke-[1.5]" />
+                  <p>your operational database history slice is completely empty.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-[#4B5563] font-bold uppercase tracking-wider">
+                        <th className="px-5 py-3.5">requisition overview / justification</th>
+                        <th className="px-5 py-3.5">asset category</th>
+                        <th className="px-5 py-3.5">funding amount</th>
+                        <th className="px-5 py-3.5">audit status</th>
+                        <th className="px-5 py-3.5 text-right">actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-medium text-gray-700 font-sans">
+                      {requisitions.map((req) => {
+                        const currentStatus = req.status?.toLowerCase() || 'pending';
+                        return (
+                          <tr key={req.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-4 max-w-sm">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-[#0A1628] text-sm lowercase truncate">{req.justification || 'unspecified asset purchase'}</span>
+                                <span className="text-[10px] text-gray-400 mt-0.5 font-mono">ID: {req.id.substring(0, 8).toUpperCase()} • channel: {req.payment_method}</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4 text-gray-500 lowercase font-medium">{req.category}</td>
+                            <td className="px-5 py-4 font-mono font-bold text-gray-900">${parseFloat(req.amount).toFixed(2)}</td>
+                            <td className="px-5 py-4">
+                              {/* 💎 INTERACTIVE SHIFT BADGES: Lift smoothly on mouse hover */}
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide select-none transition-all duration-200 transform hover:-translate-y-0.5 hover:shadow-sm cursor-pointer ${
+                                currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' :
+                                currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
+                                'bg-amber-50 text-amber-700 border border-amber-100'
+                              }`}>
+                                {currentStatus === 'approved' && <CheckCircle2 className="w-3 h-3 text-green-600" />}
+                                {currentStatus === 'rejected' && <XCircle className="w-3 h-3 text-red-600" />}
+                                {currentStatus === 'pending' && <Clock className="w-3 h-3 text-amber-500" />}
+                                {currentStatus}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              {/* 🔗 FIXED PATH: Maps to the nested requisitions/[id] folder structure */}
+                              <button 
+                                onClick={() => router.push(`/requester/requisitions/${req.id}`)}
+                                className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded transition-colors cursor-pointer"
+                              >
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-
-          </div>
-
-          {/* Ledger Structural Table Data Representation */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB] text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                  <th className="px-6 py-4">requisition id</th>
-                  <th className="px-6 py-4">description details</th>
-                  <th className="px-6 py-4">date filed</th>
-                  <th className="px-6 py-4">allocation</th>
-                  <th className="px-6 py-4">pipeline routing</th>
-                  <th className="px-6 py-4 text-right">actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5E7EB] text-sm text-[#111827]">
-                {filteredRequisitions.length > 0 ? (
-                  filteredRequisitions.map((req) => (
-                    <tr 
-                      key={req.id} 
-                      onClick={() => router.push(`/requester/requisitions/${req.id}`)}
-                      className="hover:bg-[#F9FAFB] transition-colors cursor-pointer group"
-                    >
-                      
-                      {/* Token Reference ID Column */}
-                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-[#1D4ED8]">
-                        {req.id}
-                      </td>
-                      
-                      {/* Contextual Description Details */}
-                      <td className="px-6 py-4 max-w-xs sm:max-w-md">
-                        <div className="flex flex-col">
-                          <span className="font-medium text-[#0A1628] group-hover:text-[#1D4ED8] transition-colors truncate">
-                            {req.title}
-                          </span>
-                          <span className="text-xs text-[#9CA3AF] lowercase mt-0.5">
-                            {req.category}
-                          </span>
-                        </div>
-                      </td>
-                      
-                      {/* Historical Metric Timestamp */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-[#4B5563]">
-                        {req.date}
-                      </td>
-                      
-                      {/* Financial Value Value Cell */}
-                      <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628]">
-                        ${req.amount.toFixed(2)}
-                      </td>
-                      
-                      {/* Operational Status Verification Tag Badge */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${
-                            req.status === 'approved' ? 'bg-[#059669]' :
-                            req.status === 'pending' ? 'bg-[#D97706]' : 'bg-[#DC2626]'
-                          }`} />
-                          <div className="flex flex-col">
-                            <span className="text-xs font-medium text-[#0A1628] lowercase">
-                              {req.stage}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Explicit Interactive Audit Triggers */}
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
-                        <div className="inline-flex items-center gap-1 text-[#1D4ED8] group-hover:underline font-semibold select-none">
-                          <span>audit</span>
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                        </div>
-                      </td>
-
-                    </tr>
-                  ))
-                ) : (
-                  /* Empty Fallback Visual Template State Frame */
-                  <tr>
-                    <td colSpan="6" className="text-center py-12 bg-white text-sm text-[#6B7280]">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <AlertCircle className="w-8 h-8 text-[#9CA3AF] stroke-[1.5]" />
-                        <span className="lowercase">no records found matching specified parameters</span>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
+          </>
+        )}
 
       </main>
     </div>

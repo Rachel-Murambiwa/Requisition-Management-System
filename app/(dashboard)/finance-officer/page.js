@@ -1,274 +1,371 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Search, Clock, CheckCircle2, XCircle, AlertCircle, MessageSquare, ArrowRight, LogOut, SlidersHorizontal } from 'lucide-react';
+import NotificationCenter from '@/components/layout/NotificationCenter';
+import { 
+  Search, 
+  Check, 
+  X, 
+  ArrowUpRight, 
+  Loader2, 
+  LogOut 
+} from 'lucide-react';
 
-// The comprehensive ledger arriving at the Finance Desk after passing through various stages
-const MASTER_TRANSACTION_LEDGER = [
-  {
-    id: "REQ-2026-001",
-    requester: "nkosi ndlovu",
-    location: "harare",
-    description: "transport for nkosi (recurring until pdc residence is completed)",
-    amount: 130.00,
-    date: "jun 15, 2026",
-    category: "business travel & expenses",
-    compliance: "verified",
-    status: "approved" // Approved by Head of Operations, ready for invoice manifest
-  },
-  {
-    id: "REQ-2026-002",
-    requester: "nkosi ndlovu",
-    location: "harare",
-    description: "transport for nkosi to vf for guests",
-    amount: 215.00,
-    date: "jun 14, 2026",
-    category: "business travel & expenses",
-    compliance: "verified",
-    status: "approved" // Approved by Head of Operations, ready for invoice manifest
-  },
-  {
-    id: "REQ-2026-003",
-    requester: "ronald moyo",
-    location: "harare",
-    description: "indrive expenses for ronald - site visits",
-    amount: 70.00,
-    date: "jun 14, 2026",
-    category: "business travel & expenses",
-    compliance: "verified",
-    status: "approved" // Approved by Head of Operations, ready for invoice manifest
-  },
-  {
-    id: "REQ-2026-004",
-    requester: "tinashe maposa",
-    location: "vic falls",
-    description: "admin travel to gwoke sensitisation workshop",
-    amount: 1190.00,
-    date: "jun 12, 2026",
-    category: "site visits",
-    compliance: "emergency_bypass",
-    status: "pending" // Still awaiting internal authorization signatures
-  },
-  {
-    id: "REQ-2026-005",
-    requester: "rachel murambiwa",
-    location: "bulawayo",
-    description: "marketing banners for tech recruitment drive",
-    amount: 180.00,
-    date: "may 28, 2026",
-    category: "marketing & outreach",
-    compliance: "not_required",
-    status: "rejected" // Denied upstream
-  }
-];
-
-export default function FinanceOfficerDashboard() {
+export default function FinanceOfficerTerminal() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
+
+  const [requisitions, setRequisitions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
   
-  const [transactions, setTransactions] = useState(MASTER_TRANSACTION_LEDGER);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState("all");
-  const [activeTab, setActiveTab] = useState("all");
+  // Real-time Interactive Layout Filter States
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [regionFilter, setRegionFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Hydrate full pending and historically logged pipeline requests on load
+  async function loadCentralAuditQueue() {
+    try {
+      setLoading(true);
+      const { data: records, error } = await supabase
+        .from('requisitions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (!records || records.length === 0) {
+        // AUTOMATED SANDBOX HYDRO-LOGS: Pre-populates rows matching your structural metrics if DB is empty
+        setRequisitions([
+          {
+            id: "7B9A2C41",
+            requester: "rachel murambiwa",
+            location: "harare hub",
+            justification: "high-density replacement server backup battery arrays for workstations",
+            category: "hub equipment & hardware",
+            amount: 450.00,
+            payment_method: "ecocash corporate wallet",
+            status: "pending",
+            created_at: new Date().toISOString()
+          },
+          {
+            id: "3C8D11A2",
+            requester: "chacha maposa",
+            location: "bulawayo hub",
+            justification: "workshop & classroom coding curriculum text printouts and training assets",
+            category: "workshop & classroom supplies",
+            amount: 35.00,
+            payment_method: "petty cash disbursement",
+            status: "pending",
+            created_at: new Date(Date.now() - 3600000).toISOString()
+          },
+          {
+            id: "9E5F33B1",
+            requester: "nkosi ndlovu",
+            location: "vic falls hub",
+            justification: "emergency perimeter security gate lock configuration alignment",
+            category: "miscellaneous emergency funds",
+            amount: 115.00,
+            payment_method: "direct bank transfer",
+            status: "approved",
+            created_at: new Date(Date.now() - 86400000).toISOString()
+          }
+        ]);
+      } else {
+        setRequisitions(records);
+      }
+    } catch (err) {
+      console.error("Central audit synchronization fault:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCentralAuditQueue();
+  }, [supabase]);
+
+  // Execute immediate state transitions directly against the target database record
+  const handleUpdateStatus = async (id, targetStatus) => {
+    setProcessingId(id);
+    try {
+      const { error } = await supabase
+        .from('requisitions')
+        .update({ status: targetStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setRequisitions(prev => prev.map(item => 
+        item.id === id ? { ...item, status: targetStatus } : item
+      ));
+    } catch (err) {
+      alert(`Pipeline transaction faulted: ${err.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
 
-  // Summary box aggregates values STRICTLY from Head of Operations approved requests
-  const regionalApprovedTotals = transactions
-    .filter(r => r.status === "approved")
-    .reduce((acc, item) => {
-      const loc = item.location.toLowerCase();
-      if (acc[loc] !== undefined) acc[loc] += item.amount;
-      return acc;
-    }, { harare: 0, "vic falls": 0, bulawayo: 0 });
+  // Dynamic Regional Live Matrix Metric Accumulators
+  const getRegionalApprovedSum = (slug) => {
+    return requisitions
+      .filter(r => r.status?.toLowerCase() === 'approved' && r.location?.toLowerCase().includes(slug.toLowerCase()))
+      .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
+  };
 
-  const approvedGrandTotal = Object.values(regionalApprovedTotals).reduce((a, b) => a + b, 0);
+  const harareApprovedTotal = getRegionalApprovedSum('harare');
+  const vicFallsApprovedTotal = getRegionalApprovedSum('vic falls');
+  const bulawayoApprovedTotal = getRegionalApprovedSum('bulawayo');
+  
+  const grandApprovedTotal = requisitions
+    .filter(r => r.status?.toLowerCase() === 'approved')
+    .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // Filter processing matching Tab States + Dropdowns + Text Inputs
-  const filteredRequests = transactions.filter(req => {
-    const matchesSearch = req.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          req.requester.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesLocation = selectedLocation === "all" || req.location === selectedLocation;
-    const matchesTab = activeTab === "all" || req.status === activeTab;
-
-    return matchesSearch && matchesLocation && matchesTab;
+  // Core Comprehensive Matrix Filter Evaluator Pipeline
+  const filteredRequisitions = requisitions.filter(req => {
+    const matchStatus = statusFilter === 'all' || req.status?.toLowerCase() === statusFilter;
+    const matchRegion = regionFilter === 'all' || req.location?.toLowerCase().includes(regionFilter.toLowerCase());
+    const matchSearch = searchQuery.trim() === '' || 
+      req.justification?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.requester?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.id?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchStatus && matchRegion && matchSearch;
   });
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-16">
+    <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
       
-      {/* Navbar Frame */}
+      {/* 💻 RESTORED NAVBAR: White-mode layout matching image_2f3b88.png */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
-            <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">uncommon</span>
-            <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded-badge tracking-wider uppercase">rms</span>
+            <span className="text-2xl font-black tracking-tight text-[#0747A1]">uncommon</span>
+            <span className="text-[10px] bg-[#EFF6FF] text-[#0747A1] border border-blue-50 font-bold px-1.5 py-0.5 rounded tracking-wide uppercase">rms</span>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-sm font-semibold text-[#0A1628]">finance desk</span>
-              <span className="text-xs text-[#4B5563] lowercase">central billing registry</span>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block select-none">
+              <div className="text-sm font-black text-gray-900 tracking-tight lowercase">finance desk</div>
+              <div className="text-[11px] text-[#6B7280] font-medium lowercase">central billing registry</div>
             </div>
             <div className="h-8 w-px bg-[#E5E7EB] hidden sm:block" />
-            <button onClick={handleSignOut} className="flex items-center gap-2 text-sm font-medium text-[#4B5563] hover:text-[#991B1B] transition-colors focus:outline-none">
-              <LogOut className="w-4 h-4 text-[#9CA3AF]" />
-              <span className="hidden sm:inline lowercase">sign out</span>
+            
+            {/* 🔔 FIXED HOVER ELEMENT: Wrapped color tags force visibility over white layouts */}
+            <div className="text-gray-600 hover:text-[#0747A1] transition-colors flex items-center justify-center">
+              <NotificationCenter role="finance-officer" />
+            </div>
+            
+            <div className="h-8 w-px bg-[#E5E7EB]" />
+            <button onClick={handleSignOut} className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-red-700 bg-transparent border-none cursor-pointer transition-colors uppercase tracking-wider">
+              <LogOut className="w-4 h-4 text-gray-400" /> sign out
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Main Workspace Frame */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {/* Main Layout Area */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         
-        {/* Workspace Greeting & Top Actions Row */}
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between border-b border-[#E5E7EB] pb-8 mb-10 gap-6">
-          <div>
-            <h1 className="text-3xl font-bold text-[#0A1628] tracking-tight lowercase">incoming review pool</h1>
-            <p className="text-sm text-[#4B5563] mt-1">cross-examine staff procurement files, request details, and compile approved items for country manager release</p>
-            
-            <button 
-              onClick={() => router.push('/finance-officer/manifest')}
-              className="mt-6 inline-flex items-center justify-center py-2.5 px-4 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-medium text-xs uppercase tracking-wider rounded-md shadow-sm transition-all cursor-pointer select-none"
-            >
+        {/* Upper Title Description Row Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start mb-10">
+          <div className="lg:col-span-2 space-y-4 pt-2">
+            <h1 className="text-4xl font-black text-[#0A1628] tracking-tight lowercase">incoming review pool</h1>
+            <p className="text-sm text-[#4B5563] font-medium leading-relaxed max-w-2xl">
+              cross-examine staff procurement files, request details, and compile approved items for country manager release
+            </p>
+            <button className="py-2.5 px-5 bg-[#0747A1] text-white text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:opacity-95 border-none cursor-pointer transition-all mt-2">
               compile approved manifestation
             </button>
           </div>
 
-          {/* Matrix Calculation Summary Display (Tracks Approved Values Only) */}
-          <div className="w-full md:max-w-xs border border-[#E5E7EB] bg-white rounded-lg p-4 shadow-sm shrink-0">
-            <div className="text-[10px] font-bold text-[#4B5563] uppercase tracking-wider mb-2 pb-1.5 border-b border-gray-100">approved manifest total</div>
-            <div className="space-y-2 border-b border-[#E5E7EB] pb-2.5">
-              <div className="flex justify-between text-xs font-medium text-[#4B5563]">
-                <span className="lowercase">harare</span>
-                <span className="font-mono font-bold text-[#0A1628]">${regionalApprovedTotals['harare'].toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-xs font-medium text-[#4B5563]">
-                <span className="lowercase">vic falls</span>
-                <span className="font-mono font-bold text-[#0A1628]">${regionalApprovedTotals['vic falls'].toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-xs font-medium text-[#4B5563]">
-                <span className="lowercase">bulawayo</span>
-                <span className="font-mono font-bold text-[#0A1628]">${regionalApprovedTotals['bulawayo'].toFixed(2)}</span>
-              </div>
+          {/* SIDEBAR METRICS WIDGET */}
+          <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm space-y-4">
+            <div className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider border-b border-gray-100 pb-2">
+              approved manifest total
             </div>
-            <div className="flex justify-between pt-2.5 text-xs font-bold text-[#0A1628]">
-              <span className="lowercase">grand total</span>
-              <span className="font-mono text-[#1D4ED8]">${approvedGrandTotal.toFixed(2)}</span>
+            <div className="space-y-2.5 text-xs font-semibold text-gray-600">
+              <div className="flex justify-between items-center">
+                <span className="lowercase text-gray-400">harare</span>
+                <span className="font-mono font-bold text-gray-900">${harareApprovedTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="lowercase text-gray-400">vic falls</span>
+                <span className="font-mono font-bold text-gray-900">${vicFallsApprovedTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="lowercase text-gray-400">bulawayo</span>
+                <span className="font-mono font-bold text-gray-900">${bulawayoApprovedTotal.toFixed(2)}</span>
+              </div>
+              <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-sm">
+                <span className="font-bold text-gray-900 lowercase">grand total</span>
+                <span className="font-mono font-black text-[#0747A1]">${grandApprovedTotal.toFixed(2)}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Toolbar Controller Assembly */}
-        <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-[#E5E7EB] flex flex-col sm:flex-row gap-4 items-center justify-between bg-white">
-            
-            {/* Expanded Status Filter Tabs */}
-            <div className="flex border border-[#E5E7EB] rounded-md p-1 bg-[#F9FAFB] self-start">
-              {['all', 'pending', 'approved', 'rejected'].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors lowercase whitespace-nowrap focus:outline-none ${
-                    activeTab === tab ? 'bg-white text-[#1D4ED8] shadow-sm font-semibold' : 'text-[#4B5563] hover:text-[#0A1628]'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="flex items-center gap-2 border border-[#E5E7EB] rounded-md px-3 py-1.5 bg-[#F9FAFB]">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#4B5563]" />
-                <select 
-                  value={selectedLocation} 
-                  onChange={(e) => setSelectedLocation(e.target.value)}
-                  className="text-xs bg-transparent text-[#0A1628] font-semibold focus:outline-none cursor-pointer uppercase tracking-wider"
-                >
-                  <option value="all">all regions</option>
-                  <option value="harare">harare</option>
-                  <option value="bulawayo">bulawayo</option>
-                  <option value="vic falls">vic falls</option>
-                </select>
-              </div>
-
-              <div className="relative flex items-center w-full sm:max-w-xs">
-                <Search className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="search requests..."
-                  className="w-full pl-10 pr-4 py-1.5 text-sm bg-white border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
-                />
-              </div>
-            </div>
+        {/* CONTROLS BAR: Dual split layout combining tabs on left with search/region on right */}
+        <div className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-sm mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          
+          {/* Left Side Filter Tabs */}
+          <div className="flex bg-gray-100/80 p-1 rounded-lg text-xs font-bold select-none lowercase self-start">
+            {['all', 'pending', 'approved', 'rejected'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setStatusFilter(tab)}
+                className={`px-4 py-1.5 rounded-md border-none focus:outline-none cursor-pointer font-bold transition-all ${
+                  statusFilter === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
 
-          {/* REQUESTS TABLE */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB] text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                  <th className="px-6 py-4">id</th>
-                  <th className="px-6 py-4">location</th>
-                  <th className="px-6 py-4">staff member</th>
-                  <th className="px-6 py-4">description specs</th>
-                  <th className="px-6 py-4">amount</th>
-                  <th className="px-6 py-4">workflow signature status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5E7EB] text-sm text-[#111827]">
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((req) => (
-                    <tr key={req.id} className="hover:bg-gray-50/60 transition-colors font-sans">
-                      <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1D4ED8]">{req.id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-xs font-bold text-[#1D4ED8] bg-[#EFF6FF] px-2 py-0.5 rounded lowercase">{req.location}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap lowercase text-[#4B5563] font-medium">{req.requester}</td>
-                      <td className="px-6 py-4 max-w-xs sm:max-w-md">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description}</span>
-                          <span className="text-[10px] font-mono text-[#9CA3AF] uppercase tracking-wide mt-0.5">{req.category}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628]">${req.amount.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium lowercase ${
-                          req.status === 'approved' ? 'bg-[#DCFCE7] text-[#166534]' : 
-                          req.status === 'rejected' ? 'bg-[#FEE2E2] text-[#991B1B]' : 
-                          'bg-[#FEF9C3] text-[#854D0E]'
-                        }`}>
-                          {req.status === 'approved' && <CheckCircle2 className="w-3 h-3 text-[#166534]" />}
-                          {req.status === 'rejected' && <XCircle className="w-3 h-3 text-[#991B1B]" />}
-                          {req.status === 'pending' && <Clock className="w-3 h-3 text-[#854D0E]" />}
-                          {req.status === 'approved' ? 'hop approved' : req.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="6" className="text-center py-12 bg-white text-sm text-[#6B7280]">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <AlertCircle className="w-8 h-8 text-[#9CA3AF] stroke-[1.5]" />
-                        <span className="lowercase">no records found matching filter constraints</span>
-                      </div>
-                    </td>
+          {/* Right Side Settings Dropdown + Input Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <select
+                value={regionFilter}
+                onChange={(e) => setRegionFilter(e.target.value)}
+                className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold uppercase tracking-wide text-gray-700 cursor-pointer focus:outline-none focus:border-[#0747A1] appearance-none min-w-[140px]"
+              >
+                <option value="all">all regions</option>
+                <option value="harare">harare hub</option>
+                <option value="bulawayo">bulawayo hub</option>
+                <option value="vic falls">vic falls hub</option>
+              </select>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[9px]">▼</span>
+            </div>
+
+            <div className="relative flex items-center">
+              <Search className="absolute left-3 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="search requests..."
+                className="pl-9 pr-4 py-2 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:border-[#0747A1] w-full sm:w-64"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Core Requisitions historical Matrix Table */}
+        <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+          {loading ? (
+            <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
+              <Loader2 className="w-7 h-7 text-[#0747A1] animate-spin" />
+              <span>refreshing pipeline registers...</span>
+            </div>
+          ) : filteredRequisitions.length === 0 ? (
+            <div className="p-20 text-center text-gray-400 font-medium text-xs space-y-3">
+              <div className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center mx-auto text-gray-400 text-sm font-bold font-mono">!</div>
+              <p className="lowercase">no records found matching filter constraints</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-[#E5E7EB] text-[#4B5563] font-black uppercase tracking-wider text-[10px]">
+                    <th className="px-6 py-4">id</th>
+                    <th className="px-6 py-4">location</th>
+                    <th className="px-6 py-4">staff member</th>
+                    <th className="px-6 py-4">description specs</th>
+                    <th className="px-6 py-4">amount</th>
+                    <th className="px-6 py-4 text-right">workflow signature status</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium text-gray-700 font-sans">
+                  {filteredRequisitions.map((req) => {
+                    const isHighValue = parseFloat(req.amount) > 50;
+                    const statusKey = req.status?.toLowerCase() || 'pending';
+                    
+                    return (
+                      <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
+                        
+                        <td className="px-6 py-4 font-mono font-bold text-[#0747A1] uppercase tracking-wide">
+                          {req.id.substring(0, 8)}
+                        </td>
 
+                        <td className="px-6 py-4 font-bold text-gray-900 lowercase">
+                          {req.location || 'harare'}
+                        </td>
+
+                        <td className="px-6 py-4 lowercase font-medium text-gray-600">
+                          {req.requester}
+                        </td>
+
+                        <td className="px-6 py-4 max-w-xs sm:max-w-md">
+                          <div className="flex flex-col">
+                            <span className="text-gray-900 font-bold lowercase truncate">{req.justification || 'procurement asset deployment'}</span>
+                            {isHighValue && (
+                              <span className="text-[9px] font-black uppercase tracking-wide text-amber-600 mt-0.5 flex items-center gap-1">
+                                ⚠️ requires 3 vendor quotations
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono font-bold text-gray-900 text-sm">
+                          ${parseFloat(req.amount).toFixed(2)}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          {statusKey === 'pending' ? (
+                            <div className="flex items-center justify-end gap-2">
+                              
+                              <button 
+                                onClick={() => router.push(`/finance-officer/review/${req.id}`)}
+                                className="p-1.5 border border-gray-200 text-gray-400 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md cursor-pointer transition-all"
+                                title="inspect validation documents"
+                              >
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleUpdateStatus(req.id, 'rejected')}
+                                disabled={processingId !== null}
+                                className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md cursor-pointer transition-colors disabled:opacity-40"
+                              >
+                                {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                              </button>
+
+                              <button
+                                onClick={() => handleUpdateStatus(req.id, 'approved')}
+                                disabled={processingId !== null}
+                                className="p-1.5 bg-[#0747A1] border border-transparent text-white hover:bg-blue-800 rounded-md cursor-pointer transition-colors disabled:opacity-40"
+                              >
+                                {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              </button>
+
+                            </div>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide select-none border cursor-pointer transition-all duration-300 transform active:scale-95 will-change-transform hover:-translate-y-1 hover:scale-105 ${
+                              statusKey === 'approved' 
+                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100/70 hover:shadow-green-100/50 hover:shadow-md' 
+                                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70 hover:shadow-red-100/50 hover:shadow-md'
+                            }`}>
+                              {statusKey === 'approved' ? 'vetted & authorized' : 'audit rejected'}
+                            </span>
+                          )}
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
       </main>
