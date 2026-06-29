@@ -12,7 +12,8 @@ import {
   FileText, 
   ArrowUpRight, 
   Loader2,
-  LogOut
+  LogOut,
+  MessageSquare // 🛠️ IMPORTED: Added for clean comment log visualization
 } from 'lucide-react';
 
 export default function RequesterDashboard() {
@@ -96,7 +97,6 @@ export default function RequesterDashboard() {
             <p className="text-sm text-[#4B5563] mt-1">monitor funding cycles, view validation pipeline logs, and dispatch requests</p>
           </div>
 
-          {/* 🔗 FIXED PATH: Points cleanly inside your requisitions route folder tree */}
           <button 
             onClick={() => router.push('/requester/requisitions/new')}
             className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 bg-[#0747A1] hover:opacity-95 text-white text-xs font-bold uppercase tracking-wider rounded-md shadow-sm border-none cursor-pointer transition-opacity"
@@ -112,7 +112,7 @@ export default function RequesterDashboard() {
           </div>
         ) : (
           <>
-            {/* Quick Analytics Analytics Stream Cards */}
+            {/* Quick Analytics Stream Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-xs font-semibold text-gray-500">
               <div className="bg-white border border-[#E5E7EB] rounded-lg p-5 shadow-sm">
                 <div className="uppercase tracking-wider text-[10px] text-gray-400">total records dispatched</div>
@@ -154,14 +154,21 @@ export default function RequesterDashboard() {
                           <tr key={req.id} className="hover:bg-gray-50/50 transition-colors">
                             <td className="px-5 py-4 max-w-sm">
                               <div className="flex flex-col">
-                                <span className="font-bold text-[#0A1628] text-sm lowercase truncate">{req.justification || 'unspecified asset purchase'}</span>
+                                <span className="font-bold text-[#0A1628] text-sm lowercase truncate">{req.justification || req.description || 'unspecified asset purchase'}</span>
                                 <span className="text-[10px] text-gray-400 mt-0.5 font-mono">ID: {req.id.substring(0, 8).toUpperCase()} • channel: {req.payment_method}</span>
+                                
+                                {/* 📌 NEW: Dynamic execution overlay maps operations feedback inline safely */}
+                                {currentStatus === 'rejected' && req.rejection_comment && (
+                                  <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 flex items-center gap-1.5 lowercase max-w-fit animate-fadeIn">
+                                    <MessageSquare className="w-3.5 h-3.5 shrink-0 text-red-500" /> 
+                                    <span>reason: {req.rejection_comment}</span>
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="px-5 py-4 text-gray-500 lowercase font-medium">{req.category}</td>
                             <td className="px-5 py-4 font-mono font-bold text-gray-900">${parseFloat(req.amount).toFixed(2)}</td>
                             <td className="px-5 py-4">
-                              {/* 💎 INTERACTIVE SHIFT BADGES: Lift smoothly on mouse hover */}
                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide select-none transition-all duration-200 transform hover:-translate-y-0.5 hover:shadow-sm cursor-pointer ${
                                 currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' :
                                 currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
@@ -170,11 +177,10 @@ export default function RequesterDashboard() {
                                 {currentStatus === 'approved' && <CheckCircle2 className="w-3 h-3 text-green-600" />}
                                 {currentStatus === 'rejected' && <XCircle className="w-3 h-3 text-red-600" />}
                                 {currentStatus === 'pending' && <Clock className="w-3 h-3 text-amber-500" />}
-                                {currentStatus}
+                                {currentStatus === 'rejected' ? 'rejected' : currentStatus}
                               </span>
                             </td>
                             <td className="px-5 py-4 text-right">
-                              {/* 🔗 FIXED PATH: Maps to the nested requisitions/[id] folder structure */}
                               <button 
                                 onClick={() => router.push(`/requester/requisitions/${req.id}`)}
                                 className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded transition-colors cursor-pointer"
