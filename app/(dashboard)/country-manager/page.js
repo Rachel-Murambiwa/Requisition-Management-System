@@ -18,7 +18,9 @@ import {
 
 export default function CountryManagerDashboard() {
   const router = useRouter();
-  const supabase = createClient();
+  
+  // 🛠️ FIXED: Wrapped initialization to guarantee a single persistent client instance across render flashes
+  const [supabase] = useState(() => createClient());
   
   // Initialize state as an empty array ready for real-time relational data pipelines
   const [items, setItems] = useState([]);
@@ -101,25 +103,32 @@ export default function CountryManagerDashboard() {
     // Extract all tracking IDs currently loaded in the batch matrix array
     const itemIdsToRelease = items.map(i => i.id);
 
-    const { error } = await supabase
-      .from('requisitions')
-      .update({ status: 'disbursed' })
-      .in('id', itemIdsToRelease);
+    try {
+      // 1. Update the master voucher index rows to disbursed status parameters
+      const { error: updateError } = await supabase
+        .from('requisitions')
+        .update({ status: 'disbursed' })
+        .in('id', itemIdsToRelease);
 
-    if (!error) {
+      if (updateError) throw updateError;
+
+      // 2. 🚀 OPTIONAL EXTENSION PLACEHOLDER: Insert notification rows here if you want 
+      //    to instantly signal requesters that their funding is dispatched!
+
       setTimeout(() => {
         setDisbursalStatus("completed");
         setItems([]); // Clear screen list frame since items are successfully pushed out of pipeline
       }, 1200);
-    } else {
-      console.error("treasury execution error:", error.message);
+
+    } catch (err) {
+      console.error("treasury execution error:", err.message);
       setDisbursalStatus("idle");
       alert("failed releasing capital. verify profile role-based privileges mapping.");
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] text-[#111827] font-avenir antialiased pb-16">
+    <div className="min-h-screen bg-[#F3F4F6] text-[#111827] font-sans antialiased pb-16">
       
       {/* Universal Executive Navigation Header */}
       <nav className="w-full bg-[#0A1628] text-white print:hidden">
@@ -197,7 +206,8 @@ export default function CountryManagerDashboard() {
                 <h2 className="text-2xl font-bold text-[#0A1628] lowercase">requisition request</h2>
                 <div className="inline-block text-left border border-gray-200 bg-gray-50 rounded p-2.5 text-xs font-medium space-y-0.5">
                   <div><span className="text-[#4B5563]">Invoice No:</span> <span className="font-mono font-bold text-[#0A1628]">1106</span></div>
-                  <div><span className="text-[#4B5563]">Approval Date:</span> <span className="font-mono font-bold text-[#0A1628]">2026/05/29</span></div>
+                  {/* 📆 UPDATED: Formats dynamically to match current tracking context dates */}
+                  <div><span className="text-[#4B5563]">Approval Date:</span> <span className="font-mono font-bold text-[#0A1628]">{new Date().toISOString().split('T')[0].replace(/-/g, '/')}</span></div>
                 </div>
               </div>
             </div>
@@ -304,7 +314,6 @@ export default function CountryManagerDashboard() {
             </div>
           </div>
         ) : (
-          /* Analytics Tab Code Workspace Remains Unchanged */
           <div className="w-full bg-white border border-[#E5E7EB] rounded-lg shadow-sm p-8 sm:p-12 print:border-none print:shadow-none space-y-12 animate-slideDown">
             <div className="flex justify-between border-b border-gray-200 pb-6">
               <div>

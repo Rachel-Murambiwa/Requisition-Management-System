@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client'; // 🚀 Imported your live Supabase client
+import { createClient } from '@/lib/supabase/client';
 import { 
   Bell, 
   Check, 
@@ -24,7 +24,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 📥 FETCH LIVE ALERTS FROM SUPABASE
+  // 📥 METHOD A: INITIAL DATA FETCH
   async function loadNotifications() {
     try {
       setLoading(true);
@@ -37,7 +37,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
       if (error) throw error;
 
       if (!data || data.length === 0) {
-        // 🛠️ SANDBOX FALLBACK: Keeps your UI populated if DB rows are empty
+        // Fallback placeholder arrays to keep screens hydrated during staging
         const fallbacks = {
           "finance-officer": [
             { id: 991, type: "stage_1", title: "new request logged", msg: "rachel murambiwa logged a new travel allocation file for bulawayo hub.", time_label: "1m ago", read: false, link: "/finance-officer/review/7B9A2C41" },
@@ -52,25 +52,47 @@ export default function NotificationCenter({ role = "finance-officer" }) {
         setAlerts(data);
       }
     } catch (err) {
-      console.error("Notification database synchronization failure:", err.message);
+      console.error("database retrieval failure:", err.message);
     } finally {
       setLoading(false);
     }
   }
 
+  // 📡 METHOD B: REAL-TIME STREAM PIPELINE
   useEffect(() => {
+    // Fire initial database index load
     loadNotifications();
+
+    // ⚡ Initialize hot WebSocket listener mapping to the public schema channel
+    const notificationsChannel = supabase
+      .channel('live-internal-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT', // Intercept raw inserts only
+          schema: 'public',
+          table: 'notifications',
+          filter: `role=eq.${role}` // Security isolation perimeter filter
+        },
+        (payload) => {
+          // Push new incoming table payloads directly to the top of the UI state array
+          setAlerts((currentAlerts) => [payload.new, ...currentAlerts]);
+        }
+      )
+      .subscribe();
+
+    // Clean up channel allocations when components unmount or swap parameters
+    return () => {
+      supabase.removeChannel(notificationsChannel);
+    };
   }, [role, supabase]);
 
   const unreadCount = alerts.filter(a => !a.read).length;
 
-  // 📝 UPDATE READ STATUS IN DATABASE
   const handleNotificationClick = async (alert) => {
-    // Optimistic UI update
     setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
     setIsOpen(false);
 
-    // If it's a real DB record, update it on the backend
     if (alert.id < 900) {
       await supabase
         .from('notifications')
@@ -94,21 +116,21 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   };
 
   return (
-    <div className="relative font-sans text-xs">
+    <div className="relative font-sans text-xs text-[#111827]">
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-500 hover:text-[#0747A1] bg-gray-50 hover:bg-blue-50 rounded-full transition-all focus:outline-none border border-gray-200 cursor-pointer"
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#991B1B] text-white font-mono font-bold text-[9px] rounded-full flex items-center justify-center animate-pulse">
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#991B1B] text-white font-mono font-bold text-[9px] rounded-full flex items-center justify-center {unreadCount > 0 ? 'animate-bounce' : ''}">
             {unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-3 w-80 bg-white border border-[#E5E7EB] rounded-lg shadow-xl z-50 text-left overflow-hidden">
+        <div className="absolute right-0 mt-3 w-80 bg-white border border-[#E5E7EB] rounded-lg shadow-xl z-50 text-left overflow-hidden animate-fadeIn">
           
           <div className="p-3 bg-gray-50 border-b border-[#E5E7EB] flex items-center justify-between select-none">
             <span className="font-bold text-[#0A1628] uppercase tracking-wider text-[10px]">notification center feed</span>
@@ -123,7 +145,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
             {loading ? (
               <div className="py-8 flex items-center justify-center gap-2 text-gray-400 font-medium lowercase">
                 <Loader2 className="w-4 h-4 text-[#0747A1] animate-spin" />
-                <span>syncing feeds...</span>
+                <span>syncing dynamic streams...</span>
               </div>
             ) : alerts.length > 0 ? (
               alerts.map((alert) => (
@@ -148,7 +170,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
                       {!alert.read && <span className="w-1.5 h-1.5 bg-[#0747A1] rounded-full shrink-0" />}
                     </div>
                     <p className="text-gray-600 text-[11px] leading-relaxed lowercase">{alert.msg}</p>
-                    <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">{alert.time_label || alert.time}</span>
+                    <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">{alert.time_label || 'just now'}</span>
                   </div>
                 </div>
               ))
