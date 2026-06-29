@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import NotificationCenter from '@/components/layout/NotificationCenter';
@@ -19,68 +19,167 @@ import {
   LayoutDashboard,
   TrendingUp,
   Activity,
-  MapPin
+  MapPin,
+  MessageSquare,
+  X,
+  Loader2
 } from 'lucide-react';
 
 const FORWARDED_AUDIT_QUEUE = [
-  { id: "REQ-001", requester: "nkosi ndlovu", location: "harare", description: "transport for nkosi (recurring until pdc residence is completed)", amount: 130.00, date: "jun 15, 2026", category: "business travel", status: "approved" },
-  { id: "REQ-002", requester: "nkosi ndlovu", location: "harare", description: "transport for nkosi to vf for guests", amount: 215.00, date: "jun 14, 2026", category: "business travel", status: "approved" },
-  { id: "REQ-003", requester: "ronald moyo", location: "harare", description: "indrive expenses for ronald - site visits", amount: 70.00, date: "jun 14, 2026", category: "business travel", status: "approved" },
-  { id: "REQ-006", requester: "tinashe maposa", location: "vic falls", description: "admin travel to gwoke sensitisation workshop", amount: 1190.00, date: "jun 12, 2026", category: "site visits", status: "pending" },
-  { id: "REQ-007", requester: "rachel murambiwa", location: "bulawayo", description: "deep-cycle solar inverter battery cells backup replacement", amount: 1000.00, date: "jun 10, 2026", category: "infrastructure", status: "pending" },
-  { id: "REQ-008", requester: "shammah dzwairo", location: "harare", description: "unauthorized high-end mechanical gaming keyboards for lab testing", amount: 450.00, date: "jun 05, 2026", category: "hub equipment", status: "rejected" },
-  { id: "REQ-009", requester: "reward murambiwa", location: "bulawayo", description: "marketing brochures & pull-up banners for tech recruitment drive", amount: 180.00, date: "may 28, 2026", category: "marketing", status: "rejected" },
-  { id: "REQ-010", requester: "jane doe", location: "vic falls", description: "uncapped fiber internet backbone subscription hq", amount: 365.00, date: "may 25, 2026", category: "utilities", status: "approved" }
+  { id: "REQ-001", requester: "nkosi ndlovu", location: "harare", description: "transport for nkosi (recurring until pdc residence is completed)", amount: 130.00, date: "jun 15, 2026", category: "business travel", status: "approved", rejection_comment: null },
+  { id: "REQ-006", requester: "tinashe maposa", location: "vic falls", description: "admin travel to gwoke sensitisation workshop", amount: 1190.00, date: "jun 12, 2026", category: "site visits", status: "pending", rejection_comment: null },
+  { id: "REQ-007", requester: "rachel murambiwa", location: "bulawayo", description: "deep-cycle solar inverter battery cells backup replacement", amount: 1000.00, date: "jun 10, 2026", category: "infrastructure", status: "pending", rejection_comment: null },
+  { id: "REQ-008", requester: "shammah dzwairo", location: "harare", description: "unauthorized high-end mechanical gaming keyboards for lab testing", amount: 450.00, date: "jun 05, 2026", category: "hub equipment", status: "rejected", rejection_comment: "not within budget parameters for general educational lab resources." }
 ];
 
 export default function HeadOfOperationsDashboard() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
   
-  const [queue, setQueue] = useState(FORWARDED_AUDIT_QUEUE);
+  const [queue, setQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("all");
   const [activeTab, setActiveTab] = useState("pending");
   const [viewMode, setViewMode] = useState("dashboard");
+
+  // 💬 Comment Dialog Overlay States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [targetItem, setTargetItem] = useState(null);
+  const [commentText, setCommentText] = useState("");
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
+
+  // Sync initial queue registry logs
+  async function syncOperationsQueue() {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('requisitions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setQueue(FORWARDED_AUDIT_QUEUE);
+      } else {
+        setQueue(data);
+      }
+    } catch (err) {
+      console.error("Ops sync network error:", err.message);
+      setQueue(FORWARDED_AUDIT_QUEUE);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    syncOperationsQueue();
+  }, [supabase]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
 
-  const handleDecision = (id, newStatus) => {
-    setQueue(queue.map(item => item.id === id ? { ...item, status: newStatus } : item));
+  // 👍 APPROVED HANDLER: Straight transaction signature release
+  const handleApprove = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('requisitions')
+        .update({ status: 'approved' })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved' } : item));
+    } catch (err) {
+      console.error("Approval transaction fault:", err.message);
+    }
+  };
+
+  // 👎 REJECT DETECTOR: Opens comment collection form modal
+  const openRejectionModal = (item) => {
+    setTargetItem(item);
+    setCommentText("");
+    setIsModalOpen(true);
+  };
+
+  // 🚀 REJECTION CONFIRMATION: Saves comments and dispatches direct notification row parameters
+  const handleConfirmRejection = async (e) => {
+    e.preventDefault();
+    if (!commentText.trim() || !targetItem) return;
+
+    setIsSubmittingDecision(true);
+    const cleaningComment = commentText.toLowerCase().trim();
+
+    try {
+      // 1. Update the requisition status with comment notes inside database schemas
+      await supabase
+        .from('requisitions')
+        .update({ 
+          status: 'rejected',
+          rejection_comment: cleaningComment
+        })
+        .eq('id', targetItem.id);
+
+      // 2. Dispatch live instant notification row to the specific requester
+      await supabase
+        .from('notifications')
+        .insert([{
+          role: 'requester',
+          type: 'clarification',
+          title: 'requisition rejected',
+          msg: `ops rejected ${targetItem.id.substring(0,8)}: "${cleaningComment}"`,
+          time_label: 'just now',
+          link: `/requester`,
+          read: false
+        }]);
+
+      // 3. Update UI state matrix optimistically
+      setQueue(prev => prev.map(item => 
+        item.id === targetItem.id 
+          ? { ...item, status: 'rejected', rejection_comment: cleaningComment } 
+          : item
+      ));
+
+      setIsModalOpen(false);
+      setTargetItem(null);
+    } catch (err) {
+      console.error("Rejection lifecycle pipeline error:", err.message);
+    } finally {
+      setIsSubmittingDecision(false);
+    }
   };
 
   // --- METRIC PROCESSORS ---
-  const totalVolume = queue.reduce((a, b) => a + b.amount, 0);
+  const totalVolume = queue.reduce((a, b) => a + parseFloat(b.amount || 0), 0);
   const approvedItems = queue.filter(r => r.status === 'approved');
   const rejectedItems = queue.filter(r => r.status === 'rejected');
   const pendingItems = queue.filter(r => r.status === 'pending');
 
-  const approvedValue = approvedItems.reduce((a, b) => a + b.amount, 0);
-  const rejectedValue = rejectedItems.reduce((a, b) => a + b.amount, 0);
-  const pendingValue = pendingItems.reduce((a, b) => a + b.amount, 0);
+  const approvedValue = approvedItems.reduce((a, b) => a + parseFloat(b.amount || 0), 0);
+  const rejectedValue = rejectedItems.reduce((a, b) => a + parseFloat(b.amount || 0), 0);
+  const pendingValue = pendingItems.reduce((a, b) => a + parseFloat(b.amount || 0), 0);
 
   const regionalMetrics = queue.reduce((acc, item) => {
-    const loc = item.location.toLowerCase();
+    const loc = item.location?.toLowerCase() || 'harare';
     if (acc[loc]) {
-      acc[loc].total += item.amount;
-      if (item.status === 'approved') acc[loc].approved += item.amount;
+      acc[loc].total += parseFloat(item.amount || 0);
+      if (item.status === 'approved') acc[loc].approved += parseFloat(item.amount || 0);
     }
     return acc;
   }, { harare: { total: 0, approved: 0 }, bulawayo: { total: 0, approved: 0 }, "vic falls": { total: 0, approved: 0 } });
 
   const categoryMetrics = queue.reduce((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + item.amount;
+    acc[item.category || 'other'] = (acc[item.category || 'other'] || 0) + parseFloat(item.amount || 0);
     return acc;
   }, {});
 
   const filteredQueue = queue.filter(req => {
-    const matchesSearch = req.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const matchesSearch = (req.description || req.justification || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
                           req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           req.requester.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesLocation = selectedLocation === "all" || req.location === selectedLocation;
+    const matchesLocation = selectedLocation === "all" || req.location?.toLowerCase() === selectedLocation;
     const matchesTab = activeTab === "all" || req.status === activeTab;
     return matchesSearch && matchesLocation && matchesTab;
   });
@@ -92,7 +191,7 @@ export default function HeadOfOperationsDashboard() {
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50 print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
-            <span className="text-4xl font-bold font-avenir text-uc-blue bg-white">uncommon</span>
+            <span className="text-4xl font-bold font-sans tracking-tight text-[#0747A1] bg-white">uncommon</span>
             <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded uppercase">rms</span>
           </div>
 
@@ -100,8 +199,8 @@ export default function HeadOfOperationsDashboard() {
             <div className="flex border border-[#E5E7EB] bg-[#F3F4F6] p-1 rounded-md">
               <button 
                 onClick={() => setViewMode('dashboard')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded flex items-center gap-1.5 transition-all focus:outline-none lowercase ${
-                  viewMode === 'dashboard' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-[#4B5563] hover:text-[#0A1628]'
+                className={`px-3 py-1.5 text-xs font-semibold rounded flex items-center gap-1.5 transition-all focus:outline-none lowercase cursor-pointer border-none ${
+                  viewMode === 'dashboard' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-[#4B5563] hover:text-[#0A1628] bg-transparent'
                 }`}
               >
                 <LayoutDashboard className="w-3.5 h-3.5" />
@@ -109,8 +208,8 @@ export default function HeadOfOperationsDashboard() {
               </button>
               <button 
                 onClick={() => setViewMode('report')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded flex items-center gap-1.5 transition-all focus:outline-none lowercase ${
-                  viewMode === 'report' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-[#4B5563] hover:text-[#0A1628]'
+                className={`px-3 py-1.5 text-xs font-semibold rounded flex items-center gap-1.5 transition-all focus:outline-none lowercase cursor-pointer border-none ${
+                  viewMode === 'report' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-[#4B5563] hover:text-[#0A1628] bg-transparent'
                 }`}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
@@ -119,20 +218,22 @@ export default function HeadOfOperationsDashboard() {
             </div>
 
             <div className="h-6 w-px bg-[#E5E7EB]" />
-            
-            {/* Live Notification Dropdown Integration */}
             <NotificationCenter role="head-of-operations" />
-
             <div className="h-6 w-px bg-[#E5E7EB]" />
 
-            <button onClick={handleSignOut} className="p-2 text-[#9CA3AF] hover:text-[#991B1B] transition-colors focus:outline-none">
+            <button onClick={handleSignOut} className="p-2 text-[#9CA3AF] hover:text-[#991B1B] bg-transparent border-none cursor-pointer transition-colors focus:outline-none">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </nav>
 
-      {viewMode === 'dashboard' ? (
+      {loading ? (
+        <div className="py-32 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
+          <Loader2 className="w-7 h-7 text-[#0747A1] animate-spin" />
+          <span>refreshing dynamic master registries...</span>
+        </div>
+      ) : viewMode === 'dashboard' ? (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 animate-fadeIn">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-[#0A1628] tracking-tight lowercase">operations authorization board</h1>
@@ -158,13 +259,13 @@ export default function HeadOfOperationsDashboard() {
             <div className="p-4 border-b border-[#E5E7EB] flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex border border-[#E5E7EB] rounded-md p-1 bg-[#F9FAFB] self-start">
                 {['all', 'pending', 'approved', 'rejected'].map((tab) => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors lowercase focus:outline-none ${activeTab === tab ? 'bg-white text-[#1D4ED8] shadow-sm font-semibold' : 'text-[#4B5563] hover:text-[#0A1628]'}`}>{tab === 'pending' ? 'awaiting sign-off' : tab}</button>
+                  <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1.5 text-xs font-medium rounded-md border-none cursor-pointer transition-colors lowercase focus:outline-none ${activeTab === tab ? 'bg-white text-[#1D4ED8] shadow-sm font-semibold' : 'text-[#4B5563] hover:text-[#0A1628]'}`}>{tab === 'pending' ? 'awaiting sign-off' : tab}</button>
                 ))}
               </div>
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <div className="flex items-center gap-2 border border-[#E5E7EB] rounded-md px-3 py-1.5 bg-[#F9FAFB] w-full sm:w-auto">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-[#4B5563]" />
-                  <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="text-xs bg-transparent text-[#0A1628] font-semibold focus:outline-none cursor-pointer uppercase tracking-wider w-full sm:w-auto">
+                  <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="text-xs bg-transparent border-none text-[#0A1628] font-semibold focus:outline-none cursor-pointer uppercase tracking-wider w-full sm:w-auto">
                     <option value="all">all locations</option>
                     <option value="harare">harare</option>
                     <option value="bulawayo">bulawayo</option>
@@ -193,24 +294,31 @@ export default function HeadOfOperationsDashboard() {
                 <tbody className="divide-y divide-[#E5E7EB] text-[#111827]">
                   {filteredQueue.map((req) => (
                     <tr key={req.id} className="hover:bg-gray-50/40 transition-colors font-sans">
-                      <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1D4ED8]">{req.id}</td>
+                      <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1D4ED8] uppercase">{req.id.substring(0,8)}</td>
                       <td className="px-6 py-4 whitespace-nowrap"><span className="text-xs font-bold text-[#1D4ED8] bg-[#EFF6FF] px-2 py-0.5 rounded lowercase">{req.location}</span></td>
                       <td className="px-6 py-4 whitespace-nowrap lowercase text-[#4B5563] font-medium">{req.requester}</td>
                       <td className="px-6 py-4 max-w-xs sm:max-w-xl">
                         <div className="flex flex-col">
-                          <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description}</span>
+                          <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description || req.justification}</span>
                           <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#9CA3AF] mt-0.5">{req.category}</span>
+                          {/* 📌 Display reason inline beneath item if it was rejected */}
+                          {req.status === 'rejected' && req.rejection_comment && (
+                            <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 inline-block lowercase flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3 shrink-0" /> reason: {req.rejection_comment}
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${req.amount.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
                         {req.status === 'pending' ? (
                           <div className="flex items-center justify-end gap-2 select-none">
-                            <button onClick={() => handleDecision(req.id, 'rejected')} className="p-1.5 border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none"><ThumbsDown className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => handleDecision(req.id, 'approved')} className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white rounded-md shadow-sm font-bold transition-colors focus:outline-none"><ThumbsUp className="w-3.5 h-3.5" /></button>
+                            {/* 🛠️ MODIFIED ACTION TRIGGER: Passes element to modal frame state instead of auto-firing status */}
+                            <button onClick={() => openRejectionModal(req)} className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none cursor-pointer"><ThumbsDown className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleApprove(req.id)} className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white border-none rounded-md shadow-sm font-bold transition-colors focus:outline-none cursor-pointer"><ThumbsUp className="w-3.5 h-3.5" /></button>
                           </div>
                         ) : (
-                          <span className={`text-xs font-bold uppercase tracking-wider ${req.status === 'approved' ? 'text-[#16A34A]' : 'text-[#991B1B]'}`}>{req.status}</span>
+                          <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md ${req.status === 'approved' ? 'text-[#16A34A] bg-green-50 border border-green-100' : 'text-[#991B1B] bg-red-50 border border-red-100'}`}>{req.status === 'approved' ? 'authorized signature' : 'rejected audit'}</span>
                         )}
                       </td>
                     </tr>
@@ -227,7 +335,7 @@ export default function HeadOfOperationsDashboard() {
               <h1 className="text-xl font-bold text-[#0A1628] tracking-tight lowercase">executive system compilation</h1>
               <p className="text-xs text-[#4B5563] mt-0.5">real-time trend analysis generated across network regions</p>
             </div>
-            <button onClick={() => window.print()} className="bg-[#0A1628] hover:bg-[#1A2E4A] text-white text-xs font-bold px-4 py-2 rounded flex items-center gap-2 shadow-sm select-none transition-colors"><Printer className="w-3.5 h-3.5" /> print report sheet</button>
+            <button onClick={() => window.print()} className="bg-[#0A1628] hover:bg-[#1A2E4A] text-white text-xs font-bold px-4 py-2 border-none rounded flex items-center gap-2 shadow-sm select-none transition-colors cursor-pointer"><Printer className="w-3.5 h-3.5" /> print report sheet</button>
           </div>
 
           <div className="bg-white border border-[#E5E7EB] rounded-lg p-8 sm:p-12 shadow-sm print:border-none print:shadow-none space-y-12">
@@ -311,13 +419,13 @@ export default function HeadOfOperationsDashboard() {
                       <circle cx="56" cy="56" r="48" stroke="#F3F4F6" strokeWidth="10" fill="transparent" />
                       <circle 
                         cx="56" cy="56" r="48" stroke="#16A34A" strokeWidth="10" fill="transparent" 
-                        strokeDasharray={301.6} strokeDashoffset={301.6 - (301.6 * (approvedItems.length / queue.length))}
+                        strokeDasharray={301.6} strokeDashoffset={301.6 - (301.6 * (approvedItems.length / (queue.length || 1)))}
                         strokeLinecap="round"
                         className="transition-all duration-1000" 
                       />
                     </svg>
                     <div className="absolute flex flex-col items-center">
-                      <span className="text-xl font-black text-[#0A1628]">{((approvedItems.length / queue.length) * 100).toFixed(0)}%</span>
+                      <span className="text-xl font-black text-[#0A1628]">{queue.length > 0 ? ((approvedItems.length / queue.length) * 100).toFixed(0) : 0}%</span>
                       <span className="text-[8px] font-bold text-[#9CA3AF] uppercase tracking-tight">approval rate</span>
                     </div>
                   </div>
@@ -403,6 +511,63 @@ export default function HeadOfOperationsDashboard() {
             </div>
           </div>
         </main>
+      )}
+
+      {/* 🛠️ NEW COMPONENT: LIGHT-MODE REJECTION COMMENT MODAL DIALOG */}
+      {isModalOpen && targetItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0A1628]/40 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white border border-[#E5E7EB] rounded-xl shadow-2xl p-6 relative flex flex-col space-y-4">
+            
+            <button 
+              onClick={() => setIsModalOpen(false)} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer focus:outline-none"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono font-bold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded uppercase self-start mb-2">
+                ID: {targetItem.id.substring(0,8)}
+              </span>
+              <h3 className="text-lg font-black text-[#0A1628] tracking-tight lowercase">provide rejection justification</h3>
+              <p className="text-xs text-gray-500 font-medium mt-1">
+                explain the auditing or operational constraints preventing this cash allocation from clearing.
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmRejection} className="space-y-4 text-xs font-bold text-gray-400">
+              <div className="flex flex-col gap-1.5">
+                <label className="uppercase tracking-wider text-[9px]">operational comment log</label>
+                <textarea
+                  required
+                  rows={4}
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="e.g. over budgeting limits for specific hub nodes; please adjust vehicle parameters or merge logs."
+                  className="w-full p-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg text-xs font-medium text-gray-800 placeholder-gray-400 focus:outline-none focus:border-red-600 focus:bg-white transition-all font-sans"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold uppercase tracking-wider rounded-md transition-colors border-none cursor-pointer"
+                >
+                  cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingDecision || !commentText.trim()}
+                  className="py-2 px-5 bg-[#991B1B] text-white text-xs font-bold uppercase tracking-wider rounded-md shadow-sm hover:bg-red-800 border-none cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  {isSubmittingDecision ? 'dispatching logs...' : 'confirm rejection'}
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
       )}
 
     </div>

@@ -1,252 +1,221 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import NotificationCenter from '@/components/layout/NotificationCenter';
+import { useState } from 'react';
 import { 
-  Users, 
-  Building2, 
-  LogOut, 
-  ArrowRight,
-  Settings2,
-  CheckCircle,
-  Database,
-  Sliders,
-  Loader2
+  UserPlus, 
+  Mail, 
+  User, 
+  Shield, 
+  MapPin, 
+  Loader2, 
+  CheckCircle2, 
+  AlertCircle 
 } from 'lucide-react';
 
-export default function AdminDashboard() {
-  const router = useRouter();
-  
-  // Stabilize the client instance reference to prevent loop triggers
-  const [supabase] = useState(() => createClient());
+export default function AdminInviteStaffPage() {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('requester');
+  const [hubName, setHubName] = useState('harare');
 
-  const [quotationThreshold, setQuotationThreshold] = useState(50);
-  const [isSaved, setIsSaved] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  // Live Telemetry Framework States
-  const [loadingMetrics, setLoadingMetrics] = useState(true);
-  const [metrics, setMetrics] = useState({
-    totalUsers: 0,
-    totalHubs: 0,
-    requesters: 0,
-    financeOfficers: 0,
-    headOfOps: 0,
-    countryManagers: 0
-  });
+  const rolesList = [
+    { value: 'requester', label: 'requester' },
+    { value: 'finance-officer', label: 'finance officer' },
+    { value: 'country-manager', label: 'country manager' },
+    { value: 'head-of-operations', label: 'head of operations' }
+  ];
 
-  // Isolated Hook: Strictly executes once on layout mount
-  useEffect(() => {
-    async function collectSystemMetrics() {
-      try {
-        setLoadingMetrics(true);
-        
-        // Parallel queries to fetch live database profiles and hub counts
-        const { data: profiles } = await supabase.from('profiles').select('role');
-        const { count: hubsCount } = await supabase.from('hubs').select('*', { count: 'exact', head: true });
+  const hubsList = [
+    { value: 'harare', label: 'headquarters' },
+    { value: 'h1', label:'mbare innovation hub' },
+    { value: 'h2', label: 'warren park hub' },
+    { value: 'h3', label: 'kambuzuma innovation hub' },
+    { value: 'h4', label: 'mufakose innovation hub' },
+    { value: 'h5', label: 'kuwadzana innovation hub' },
+    { value: 'h6', label: 'dzivarasekwa innovation hub' },
+    { value: 'h7', label: 'renate-dommasch innovation hub' },
+    { value: 'bulawayo', label: 'nedbank innovation hub' },
+    { value: 'b2', label: 'sally-foundation innovation hub' },
+    { value: 'vic falls', label: 'vincent-bohlen hub' },
+    { value: 'gwayi', label: 'painted dog innovation hub' },
+    {value: 'gokwe', label: 'nyamuroro innovation hub' }
+  ];
 
-        if (profiles) {
-          setMetrics({
-            totalUsers: profiles.length,
-            totalHubs: hubsCount || 0,
-            requesters: profiles.filter(p => p.role === 'requester').length,
-            financeOfficers: profiles.filter(p => p.role === 'finance_officer' || p.role === 'finance-officer').length,
-            headOfOps: profiles.filter(p => p.role === 'head_of_operations' || p.role === 'head-of-operations').length,
-            countryManagers: profiles.filter(p => p.role === 'country_manager' || p.role === 'country-manager').length,
-          });
-        }
-      } catch (err) {
-        console.error("Failed calculating telemetry parameters:", err.message);
-      } {
-        setLoadingMetrics(false);
-      }
-    }
-    collectSystemMetrics();
-  }, []); 
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
-
-  const saveConfigurationChanges = (e) => {
+  const handleSendInvite = async (e) => {
     e.preventDefault();
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
+    setError('');
+    setSuccessMessage('');
+
+    if (!email || !name) {
+      setError('all foundation profile information details are required.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/invite-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          name: name.trim(),
+          role: role,
+          hub_name: hubName
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'failed dispatching security invitation thread.');
+      }
+
+      setSuccessMessage(`secure invitation dispatched successfully to ${email.toLowerCase()}!`);
+      setEmail('');
+      setName('');
+      setRole('requester');
+      setHubName('harare');
+    } catch (err) {
+      setError(err.message || 'network connection fault during encryption bridge transaction.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] text-[#111827] font-sans antialiased pb-16">
-      
-      {/* Top Workspace Navigation Bar */}
-      <nav className="w-full bg-[#0A1628] text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 select-none">
-            <span className="text-xl font-bold tracking-tight">uncommon</span>
-            <span className="text-[10px] bg-[#991B1B] text-white font-semibold px-1.5 py-0.5 rounded uppercase">system admin</span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <NotificationCenter role="finance-officer" />
-            <div className="h-6 w-px bg-slate-700" />
-            <button onClick={handleSignOut} className="text-slate-400 hover:text-red-400 transition-colors focus:outline-none bg-transparent border-none cursor-pointer">
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Workspace Frame Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
+    <div className="min-h-screen bg-[#F9FAFB] p-6 sm:p-10 flex items-center justify-center font-sans antialiased">
+      <div className="w-full max-w-xl bg-white border border-[#E5E7EB] rounded-xl shadow-sm p-6 sm:p-10 space-y-6">
         
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#0A1628] tracking-tight lowercase">system configuration panel</h1>
-          <p className="text-sm text-[#4B5563] mt-1">provision access profiles, audit security access metrics, and manage global threshold parameters</p>
+        {/* Header Block Description */}
+        <div className="flex flex-col border-b border-gray-100 pb-4">
+          <div className="w-10 h-10 bg-[#EFF6FF] text-[#0747A1] rounded-lg flex items-center justify-center mb-3">
+            <UserPlus className="w-5 h-5" />
+          </div>
+          <h1 className="text-2xl font-black text-[#0A1628] tracking-tight lowercase">provision new staff workspace</h1>
+          <p className="text-xs text-[#4B5563] font-medium mt-1 leading-relaxed">
+            issue an authoritative secure authentication link to provision an employee profile inside the repository schema database
+          </p>
         </div>
 
-        {loadingMetrics ? (
-          <div className="py-12 flex items-center gap-2 text-xs text-gray-400 font-medium lowercase">
-            <Loader2 className="w-4 h-4 animate-spin text-[#0747A1]" /> compiling secure telemetry slot updates...
+        {/* State Notification Flags */}
+        {error && (
+          <div className="p-3.5 bg-red-50 border border-l-4 border-l-[#991B1B] border-red-200 rounded-r-lg text-xs font-semibold text-[#991B1B] flex items-center gap-2 lowercase">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            <span>{error}</span>
           </div>
-        ) : (
-          <>
-            {/* TOP LAYER: ROLE PROVISIONING HUB METRICS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-              
-              <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 shadow-sm flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                    <span>user account directories</span>
-                    <Users className="w-4 h-4 text-[#0747A1]" />
-                  </div>
-                  <div className="text-3xl font-bold text-[#0A1628] pt-2">
-                    {metrics.totalUsers} <span className="text-xs text-[#9CA3AF] font-normal">active slots</span>
-                  </div>
-                  <p className="text-xs text-gray-500 pt-1 leading-relaxed">manage permissions and verify role designations for all network hubs.</p>
-                </div>
-                
-                <div className="pt-6 flex gap-3">
-                  <button 
-                    onClick={() => router.push('/admin/users')}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-[#0747A1] hover:underline bg-transparent border-none cursor-pointer p-0"
-                  >
-                    <span>view directory</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 shadow-sm flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                    <span>innovation hub nodes</span>
-                    <Building2 className="w-4 h-4 text-[#0747A1]" />
-                  </div>
-                  <div className="text-3xl font-bold text-[#0A1628] pt-2">{metrics.totalHubs} <span className="text-xs text-[#9CA3AF] font-normal">operational regions</span></div>
-                  <p className="text-xs text-gray-500 pt-1 leading-relaxed">active infrastructure nodes registered in network matrix clusters.</p>
-                </div>
-                <div className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#9CA3AF]">
-                  all operational nodes active
-                </div>
-              </div>
-
-              <div className="bg-white border border-[#E5E7EB] rounded-lg p-6 shadow-sm flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs font-semibold text-[#4B5563] uppercase tracking-wider">
-                    <span>security ledger health</span>
-                    <Database className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div className="text-3xl font-bold text-[#0A1628] pt-2">100% <span className="text-xs text-green-600 font-bold">uptime</span></div>
-                  <p className="text-xs text-gray-500 pt-1 leading-relaxed">real-time synchronization streams with core supabase instances are secure.</p>
-                </div>
-                <div className="text-[10px] uppercase font-mono font-bold tracking-wider text-green-600 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" /> connections established
-                </div>
-              </div>
-
-            </div>
-
-            {/* BOTTOM LAYER: CONFIGURATION MATRIX SYSTEM INTERFACES */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-              
-              <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm overflow-hidden">
-                <div className="bg-gray-50 border-b border-[#E5E7EB] px-6 py-4 flex items-center gap-2">
-                  <Settings2 className="w-4 h-4 text-[#4B5563]" />
-                  <span className="text-xs font-bold text-[#0A1628] uppercase tracking-wider">global validation parameters</span>
-                </div>
-                
-                <form onSubmit={saveConfigurationChanges} className="p-6 space-y-6">
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">
-                      mandatory quotation & vat certification ceiling threshold
-                    </label>
-                    <div className="relative mt-1 rounded-md shadow-sm max-w-xs">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                        <span className="text-gray-500 text-xs font-mono">$</span>
-                      </div>
-                      <input
-                        type="number"
-                        value={quotationThreshold}
-                        onChange={(e) => setQuotationThreshold(Number(e.target.value))}
-                        className="block w-full rounded-md border border-gray-300 pl-7 pr-12 py-2 text-sm font-mono font-bold text-[#0A1628] focus:border-[#0747A1] focus:outline-none"
-                      />
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                        <span className="text-gray-400 text-[10px] font-mono uppercase">usd</span>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-gray-500 leading-relaxed pt-1">
-                      any expenditure request exceeding this flat amount requires exactly 3 independent vendor quotes and 3 tax clearance certificates to clear finance officer automated vetting checks.
-                    </p>
-                  </div>
-
-                  <div className="pt-2 flex items-center gap-4">
-                    <button
-                      type="submit"
-                      className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-xs font-bold rounded-md text-white bg-[#0A1628] hover:bg-[#1A2E4A] focus:outline-none uppercase tracking-wider transition-colors cursor-pointer select-none"
-                    >
-                      save parameters
-                    </button>
-                    {isSaved && (
-                      <span className="text-xs text-green-600 font-semibold flex items-center gap-1 font-sans">
-                        <CheckCircle className="w-3.5 h-3.5" /> parameters updated globally
-                      </span>
-                    )}
-                  </div>
-                </form>
-              </div>
-
-              <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm overflow-hidden">
-                <div className="bg-gray-50 border-b border-[#E5E7EB] px-6 py-4 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-[#4B5563]" />
-                  <span className="text-xs font-bold text-[#0A1628] uppercase tracking-wider">permission layout metrics</span>
-                </div>
-                
-                <div className="p-6 divide-y divide-gray-100 font-sans">
-                  <div className="py-3 flex justify-between items-center text-xs">
-                    <span className="font-medium text-gray-600 lowercase">innovation hub requesters</span>
-                    <span className="font-mono font-bold bg-gray-100 text-[#0A1628] px-2 py-0.5 rounded">{metrics.requesters} slots</span>
-                  </div>
-                  <div className="py-3 flex justify-between items-center text-xs">
-                    <span className="font-medium text-gray-600 lowercase">central finance officers</span>
-                    <span className="font-mono font-bold bg-blue-50 text-[#0747A1] px-2 py-0.5 rounded">{metrics.financeOfficers} slots</span>
-                  </div>
-                  <div className="py-3 flex justify-between items-center text-xs">
-                    <span className="font-medium text-gray-600 lowercase">head of operations</span>
-                    <span className="font-mono font-bold bg-green-50 text-green-700 px-2 py-0.5 rounded">{metrics.headOfOps} slots</span>
-                  </div>
-                  <div className="py-3 flex justify-between items-center text-xs">
-                    <span className="font-medium text-gray-600 lowercase">country managers</span>
-                    <span className="font-mono font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded">{metrics.countryManagers} slots</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </>
         )}
 
-      </main>
+        {successMessage && (
+          <div className="p-3.5 bg-green-50 border border-l-4 border-l-[#16A34A] border-green-200 rounded-r-lg text-xs font-semibold text-[#166534] flex items-center gap-2 lowercase">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
+        {/* Console Invitation Input Grid Form */}
+        <form onSubmit={handleSendInvite} className="space-y-5 text-xs font-bold text-gray-500">
+          
+          {/* Full Name field */}
+          <div className="flex flex-col gap-1.5">
+            <label className="uppercase tracking-wider text-[10px] text-gray-400">employee full name</label>
+            <div className="relative flex items-center">
+              <User className="absolute left-3.5 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Rachel Murambiwa"
+                disabled={isLoading}
+                className="w-full pl-10 pr-4 py-2.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg text-sm text-gray-900 font-medium placeholder-gray-400 focus:outline-none focus:border-[#0747A1] focus:bg-white transition-all font-sans"
+              />
+            </div>
+          </div>
+
+          {/* Email Channel Address field */}
+          <div className="flex flex-col gap-1.5">
+            <label className="uppercase tracking-wider text-[10px] text-gray-400">email directory channel</label>
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3.5 w-4 h-4 text-gray-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="username@uncommon.org"
+                disabled={isLoading}
+                className="w-full pl-10 pr-4 py-2.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg text-sm text-gray-900 font-medium placeholder-gray-400 focus:outline-none focus:border-[#0747A1] focus:bg-white transition-all font-sans"
+              />
+            </div>
+          </div>
+
+          {/* Select Dynamic Dropdowns Rows Grid layout splitting */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            {/* Security Matrix Role Option Selection */}
+            <div className="flex flex-col gap-1.5">
+              <label className="uppercase tracking-wider text-[10px] text-gray-400">system permission role</label>
+              <div className="relative flex items-center">
+                <Shield className="absolute left-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full pl-10 pr-8 py-2.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg text-xs font-bold text-gray-700 focus:outline-none focus:border-[#0747A1] focus:bg-white transition-all appearance-none cursor-pointer lowercase"
+                >
+                  {rolesList.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[10px]">▼</span>
+              </div>
+            </div>
+
+            {/* Target Deployment Hub Region Selection */}
+            <div className="flex flex-col gap-1.5">
+              <label className="uppercase tracking-wider text-[10px] text-gray-400">operational hub location</label>
+              <div className="relative flex items-center">
+                <MapPin className="absolute left-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                <select
+                  value={hubName}
+                  onChange={(e) => setHubName(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full pl-10 pr-8 py-2.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg text-xs font-bold text-gray-700 focus:outline-none focus:border-[#0747A1] focus:bg-white transition-all appearance-none cursor-pointer lowercase"
+                >
+                  {hubsList.map((h) => (
+                    <option key={h.value} value={h.value}>{h.label}</option>
+                  ))}
+                </select>
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[10px]">▼</span>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Execution dispatch submission button trigger layout component row */}
+          <div className="pt-4 border-t border-gray-100 flex items-center justify-end">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-2.5 px-6 bg-[#0747A1] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm hover:opacity-95 border-none cursor-pointer transition-opacity disabled:opacity-60 disabled:cursor-not-allowed min-w-[160px]"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>dispatching parameters...</span>
+                </>
+              ) : (
+                <span>dispatch staff invitation</span>
+              )}
+            </button>
+          </div>
+
+        </form>
+
+      </div>
     </div>
   );
 }

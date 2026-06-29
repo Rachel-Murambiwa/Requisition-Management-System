@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import NotificationCenter from '@/components/layout/NotificationCenter';
@@ -23,10 +23,10 @@ import {
   Briefcase
 } from 'lucide-react';
 
-export default function FinanceOfficerReviewPage({ params: paramsPromise }) {
+// 🛠️ FIXED: Destructured synchronous params directly matching Next.js 14 layout rules
+export default function FinanceOfficerReviewPage({ params }) {
   const router = useRouter();
-  const params = use(paramsPromise);
-  const requisitionId = params.id;
+  const requisitionId = params?.id;
 
   const [supabase] = useState(() => createClient());
   const [requisition, setRequisition] = useState(null);
@@ -258,7 +258,7 @@ export default function FinanceOfficerReviewPage({ params: paramsPromise }) {
                 </div>
               </div>
 
-              {/* Chat Message Logs Container */}
+              /* Chat Message Logs Container */
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]/50 font-sans font-medium text-gray-700">
                 {chatMessages.map((msg) => {
                   const isSystem = msg.sender === 'system';

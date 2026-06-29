@@ -239,9 +239,9 @@ export default function FinanceOfficerTerminal() {
                 className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold uppercase tracking-wide text-gray-700 cursor-pointer focus:outline-none focus:border-[#0747A1] appearance-none min-w-[140px]"
               >
                 <option value="all">all regions</option>
-                <option value="harare">harare hub</option>
-                <option value="bulawayo">bulawayo hub</option>
-                <option value="vic falls">vic falls hub</option>
+                <option value="harare">harare</option>
+                <option value="bulawayo">bulawayo</option>
+                <option value="vic falls">vic falls</option>
               </select>
               <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[9px]">▼</span>
             </div>
