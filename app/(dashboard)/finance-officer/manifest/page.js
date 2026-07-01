@@ -1,54 +1,118 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Printer, CheckSquare } from 'lucide-react';
-
-// Unified row items database cache matching your precise invoice template fields
-const UNFILTERED_POOL_DATA = [
-  { desc: "Transport for Nkosi ( recurring until PDC residence is completed )", class: "Core Programs", location: "Harare", section: "Admin", category: "Business Travel and Expenses", qty: 1, unitPrice: 130.00, status: "approved" },
-  { desc: "Transport for Nkosi to VF for Guests", class: "Core Programs", location: "Harare", section: "Admin", category: "Business Travel and Expenses", qty: 1, unitPrice: 215.00, status: "approved" },
-  { desc: "Indrive Expenses for Ronald", class: "Fundraising", location: "Harare", section: "Admin", category: "Business Travel and Expenses", qty: 1, unitPrice: 70.00, status: "approved" },
-  { desc: "Admin travel to Gwoke Sensitisation Workshop", class: "Core Programs", location: "Harare", section: "Site Visits", category: "Business Travel and Expenses", qty: 1, unitPrice: 1190.00, status: "approved" },
-  { desc: "Admin travel to Victoria Falls", class: "Core Programs", location: "Harare", section: "Site Visits", category: "Business Travel and Expenses", qty: 1, unitPrice: 1390.00, status: "approved" },
-  { desc: "Deep-cycle solar inverter battery cells backup replacement", class: "Core Programs", location: "Bulawayo", section: "Hub Enhancements", category: "Operational Infrastructure Assets", qty: 1, unitPrice: 100.00, status: "approved" },
-  { desc: "Classroom fiber drop line link termination splicing kits", class: "Core Programs", location: "Victoria Falls", section: "Hub Enhancements", category: "Operational Infrastructure Assets", qty: 1, unitPrice: 1555.00, status: "approved" },
-  { desc: "Marketing banners for tech recruitment drive", class: "Marketing", location: "Bulawayo", section: "Outreach", category: "Marketing & Outreach", qty: 1, unitPrice: 180.00, status: "pending" } // Skipped automatically
-];
+import { createClient } from '@/lib/supabase/client';
+import { ArrowLeft, Printer, CheckSquare, Loader2, CheckCircle2 } from 'lucide-react';
 
 export default function FinanceManifestCompilationPage() {
   const router = useRouter();
+  const [supabase] = useState(() => createClient());
 
-  // STRICT RULE: Filter the array on the fly to pick ONLY items approved by Head of Operations
-  const approvedItems = UNFILTERED_POOL_DATA.filter(item => item.status === "approved");
+  // 📊 Dynamic State Management Engines
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isForwarding, setIsForwarding] = useState(false);
+  const [forwardSuccess, setForwardSuccess] = useState(false);
+
+  // Hydrate all entries currently pre-cleared by operations
+  useEffect(() => {
+    const fetchApprovedVouchers = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('requisitions')
+          .select('*')
+          .eq('status', 'approved');
+
+        if (error) throw error;
+        if (data) setItems(data);
+      } catch (err) {
+        console.error("Manifest matrix collection error:", err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchApprovedVouchers();
+  }, [supabase]);
 
   // Group the isolated approved entries into structural headers dynamically
-  const nestedManifest = approvedItems.reduce((acc, currentItem) => {
-    let existingCategory = acc.find(c => c.category === currentItem.category);
+  const nestedManifest = items.reduce((acc, currentItem) => {
+    const categoryName = currentItem.category || "General Procurement";
+    const sectionName = currentItem.section || "Admin";
+
+    let existingCategory = acc.find(c => c.category === categoryName);
     if (!existingCategory) {
-      existingCategory = { category: currentItem.category, sections: [] };
+      existingCategory = { category: categoryName, sections: [] };
       acc.push(existingCategory);
     }
 
-    let existingSection = existingCategory.sections.find(s => s.sectionTitle === currentItem.section);
+    let existingSection = existingCategory.sections.find(s => s.sectionTitle === sectionName);
     if (!existingSection) {
-      existingSection = { sectionTitle: currentItem.section, lines: [] };
+      existingSection = { sectionTitle: sectionName, lines: [] };
       existingCategory.sections.push(existingSection);
     }
 
-    existingSection.lines.push(currentItem);
+    existingSection.lines.push({
+      desc: currentItem.justification || currentItem.description || 'operational allocation',
+      class: currentItem.class || "Core Programs",
+      location: currentItem.location || "Harare",
+      hub: currentItem.hub_name || "HQ",
+      qty: 1,
+      unitPrice: parseFloat(currentItem.amount || 0)
+    });
     return acc;
   }, []);
 
   // Compute subtotal boxes safely from normalized regional tags
-  const regionalTotals = approvedItems.reduce((acc, line) => {
-    const totalCost = line.qty * line.unitPrice;
-    const loc = line.location.toLowerCase();
-    if (acc[loc] !== undefined) acc[loc] += totalCost;
+  const regionalTotals = items.reduce((acc, line) => {
+    const totalCost = parseFloat(line.amount || 0);
+    const loc = (line.location || "").toLowerCase();
+    
+    if (loc.includes("harare")) acc["harare"] += totalCost;
+    else if (loc.includes("bulawayo")) acc["bulawayo"] += totalCost;
+    else if (loc.includes("falls") || loc.includes("vic")) acc["victoria falls"] += totalCost;
+    
     return acc;
   }, { harare: 0, bulawayo: 0, "victoria falls": 0 });
 
   const grandTotal = Object.values(regionalTotals).reduce((a, b) => a + b, 0);
+
+  // 🚀 HANDSHAKE DISPATCH: Transmits notification metrics to the Country Manager over WebSockets
+  const handleForwardToManager = async () => {
+    if (items.length === 0) return;
+    
+    setIsForwarding(true);
+    setForwardSuccess(false);
+
+    try {
+      const { error: notifyError } = await supabase
+        .from('notifications')
+        .insert([{
+          role: 'country-manager',
+          type: 'stage_4',
+          title: 'master invoice compiled',
+          msg: `fo submitted a consolidated manifest of ${items.length} items totaling $${grandTotal.toFixed(2)}.`,
+          time_label: 'just now',
+          link: '/country-manager',
+          read: false
+        }]);
+
+      if (notifyError) throw notifyError;
+
+      setForwardSuccess(true);
+      // Optional: Redirect back to main desk pool after a brief validation delay
+      setTimeout(() => {
+        router.push('/finance-officer');
+      }, 2000);
+    } catch (err) {
+      console.error("Handshake bridge failed:", err.message);
+      alert("failed dropping notification parameter logs onto the target database layer.");
+    } finally {
+      setIsForwarding(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] text-[#111827] font-sans antialiased pb-16">
@@ -58,7 +122,7 @@ export default function FinanceManifestCompilationPage() {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div 
             onClick={() => router.push('/finance-officer')}
-            className="flex items-center gap-2 text-xs font-semibold text-[#4B5563] hover:text-[#1D4ED8] cursor-pointer select-none transition-colors"
+            className="flex items-center gap-2 text-xs font-semibold text-[#4B5563] hover:text-[#0747A1] cursor-pointer select-none transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="lowercase">back to review pool</span>
@@ -67,24 +131,34 @@ export default function FinanceManifestCompilationPage() {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => window.print()}
-              className="inline-flex items-center gap-2 bg-white border border-[#E5E7EB] hover:bg-gray-50 text-[#4B5563] text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors cursor-pointer select-none"
+              disabled={loading}
+              className="inline-flex items-center gap-2 bg-white border border-[#E5E7EB] hover:bg-gray-50 text-[#4B5563] text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors cursor-pointer select-none disabled:opacity-50"
             >
               <Printer className="w-3.5 h-3.5" />
               <span className="lowercase">print manifestation sheet</span>
             </button>
             <button 
-              onClick={() => alert('manifest compiled and forwarded successfully to the country manager authorization stream.')}
-              className="inline-flex items-center gap-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors cursor-pointer select-none"
+              onClick={handleForwardToManager}
+              disabled={loading || items.length === 0 || champions || isForwarding}
+              className="inline-flex items-center gap-2 bg-[#0747A1] hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors cursor-pointer select-none disabled:opacity-40 border-none"
             >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span className="lowercase">forward to country manager for disbursement</span>
+              {isForwarding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckSquare className="w-3.5 h-3.5" />}
+              <span className="lowercase">{isForwarding ? "transmitting..." : "forward to country manager for disbursement"}</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* INVOICE CONTAINER CONTAINER */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 print:mt-0">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 print:mt-0 space-y-4">
+        
+        {forwardSuccess && (
+          <div className="p-4 bg-green-50 border border-green-200 text-xs font-bold text-green-800 rounded-lg flex items-center gap-2 lowercase shadow-sm animate-fadeIn print:hidden">
+            <CheckCircle2 className="w-4 h-4 text-green-600" />
+            <span>manifest matrix cleared and routed onto the country manager gateway stream successfully.</span>
+          </div>
+        )}
+
         <div className="w-full bg-white shadow-sm border border-[#E5E7EB] rounded-lg p-6 sm:p-10 print:border-none print:shadow-none font-sans">
           
           {/* Header Metadata Section Block */}
@@ -98,7 +172,7 @@ export default function FinanceManifestCompilationPage() {
                 <div>Peter Kazickas</div>
                 <div>5 Hamlin Lane</div>
                 <div>Amagansett, NY 11930</div>
-                <div className="text-[#1D4ED8] mt-1">Peter@uncommon.org</div>
+                <div className="text-[#0747A1] mt-1 font-semibold">Peter@uncommon.org</div>
               </div>
             </div>
 
@@ -108,7 +182,7 @@ export default function FinanceManifestCompilationPage() {
               </div>
               <div className="inline-block text-left border border-gray-200 bg-gray-50 rounded p-3 text-xs font-medium space-y-1">
                 <div><span className="text-[#4B5563]">Invoice No:</span> <span className="font-mono font-bold text-[#0A1628]">1106</span></div>
-                <div><span className="text-[#4B5563]">Approval Date:</span> <span className="font-mono font-bold text-[#0A1628]">2026/05/29</span></div>
+                <div><span className="text-[#4B5563]">Approval Date:</span> <span className="font-mono font-bold text-[#0A1628]">{new Date().toISOString().split('T')[0].replace(/-/g, '/')}</span></div>
               </div>
             </div>
           </div>
@@ -149,52 +223,63 @@ export default function FinanceManifestCompilationPage() {
 
           {/* MASTER SPREADSHEET LEDGER VIEWPORT */}
           <div className="mt-10 overflow-x-auto">
-            <table className="w-full text-left border-collapse border border-gray-200">
-              <thead>
-                <tr className="border-b border-gray-400 text-[11px] font-bold text-[#4B5563] uppercase tracking-wider bg-gray-50/70">
-                  <th className="py-3 px-4 w-5/12">description</th>
-                  <th className="py-3 px-4">class</th>
-                  <th className="py-3 px-4">location</th>
-                  <th className="py-3 px-4">hub</th>
-                  <th className="py-3 px-4 text-center">qty</th>
-                  <th className="py-3 px-4 text-right">unit price</th>
-                  <th className="py-3 px-4 text-right">total</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs text-[#111827]">
-                {nestedManifest.map((cat, catIdx) => (
-                  <div key={catIdx} className="contents">
-                    <tr className="bg-[#FBBF24]/90 print:bg-[#FBBF24] border-t border-b border-gray-300">
-                      <td colSpan="7" className="py-2 px-4 font-bold text-[#0A1628] tracking-wide text-xs">
-                        {cat.category}
-                      </td>
-                    </tr>
+            {loading ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-gray-400 lowercase text-xs">
+                <Loader2 className="w-5 h-5 text-[#0747A1] animate-spin" />
+                <span>generating invoice ledger frames...</span>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="py-12 text-center text-gray-400 italic lowercase select-none">
+                no approved records found waiting compilation.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse border border-gray-200">
+                <thead>
+                  <tr className="border-b border-gray-400 text-[11px] font-bold text-[#4B5563] uppercase tracking-wider bg-gray-50/70">
+                    <th className="py-3 px-4 w-5/12">description</th>
+                    <th className="py-3 px-4">class</th>
+                    <th className="py-3 px-4">location</th>
+                    <th className="py-3 px-4">hub</th>
+                    <th className="py-3 px-4 text-center">qty</th>
+                    <th className="py-3 px-4 text-right">unit price</th>
+                    <th className="py-3 px-4 text-right">total</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs text-[#111827]">
+                  {nestedManifest.map((cat, catIdx) => (
+                    <Fragment key={catIdx}>
+                      <tr className="bg-[#FBBF24]/90 print:bg-[#FBBF24] border-t border-b border-gray-300">
+                        <td colSpan="7" className="py-2 px-4 font-bold text-[#0A1628] tracking-wide text-xs lowercase">
+                          {cat.category}
+                        </td>
+                      </tr>
 
-                    {cat.sections.map((sec, secIdx) => (
-                      <div key={secIdx} className="contents">
-                        <tr className="bg-gray-100/50">
-                          <td colSpan="7" className="py-2 px-4 font-extrabold text-[#0A1628] tracking-tight border-b border-gray-200">
-                            {sec.sectionTitle}
-                          </td>
-                        </tr>
-
-                        {sec.lines.map((line, lineIdx) => (
-                          <tr key={lineIdx} className="hover:bg-gray-50/60 border-b border-gray-200">
-                            <td className="py-3.5 px-4 font-sans text-gray-700 font-medium pl-6">{line.desc}</td>
-                            <td className="py-3.5 px-4 font-medium text-gray-600">{line.class}</td>
-                            <td className="py-3.5 px-4 text-gray-600 font-medium">{line.location}</td>
-                            <td className="py-3.5 px-4 font-mono text-gray-400">{line.hub}</td>
-                            <td className="py-3.5 px-4 text-center font-mono font-medium text-gray-600">{line.qty}</td>
-                            <td className="py-3.5 px-4 text-right font-mono text-gray-600">${line.unitPrice.toFixed(2)}</td>
-                            <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0A1628]">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                      {cat.sections.map((sec, secIdx) => (
+                        <Fragment key={secIdx}>
+                          <tr className="bg-gray-100/50">
+                            <td colSpan="7" className="py-2 px-4 font-extrabold text-[#0A1628] tracking-tight border-b border-gray-200 lowercase">
+                              {sec.sectionTitle}
+                            </td>
                           </tr>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </tbody>
-            </table>
+
+                          {sec.lines.map((line, lineIdx) => (
+                            <tr key={lineIdx} className="hover:bg-gray-50/60 border-b border-gray-200">
+                              <td className="py-3.5 px-4 font-sans text-gray-700 font-medium pl-6 lowercase">{line.desc}</td>
+                              <td className="py-3.5 px-4 font-medium text-gray-600 lowercase">{line.class}</td>
+                              <td className="py-3.5 px-4 text-gray-600 font-medium lowercase">{line.location}</td>
+                              <td className="py-3.5 px-4 font-mono text-gray-400 uppercase">{line.hub}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-medium text-gray-600">{line.qty}</td>
+                              <td className="py-3.5 px-4 text-right font-mono text-gray-600">${line.unitPrice.toFixed(2)}</td>
+                              <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0A1628]">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
         </div>

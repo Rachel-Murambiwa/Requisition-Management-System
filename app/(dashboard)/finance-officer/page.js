@@ -143,7 +143,7 @@ export default function FinanceOfficerTerminal() {
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
       
-      {/* 💻 RESTORED NAVBAR: White-mode layout matching image_2f3b88.png */}
+      {/* Navbar View Layout Frame */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -158,7 +158,6 @@ export default function FinanceOfficerTerminal() {
             </div>
             <div className="h-8 w-px bg-[#E5E7EB] hidden sm:block" />
             
-            {/* 🔔 FIXED HOVER ELEMENT: Wrapped color tags force visibility over white layouts */}
             <div className="text-gray-600 hover:text-[#0747A1] transition-colors flex items-center justify-center">
               <NotificationCenter role="finance-officer" />
             </div>
@@ -181,7 +180,11 @@ export default function FinanceOfficerTerminal() {
             <p className="text-sm text-[#4B5563] font-medium leading-relaxed max-w-2xl">
               cross-examine staff procurement files, request details, and compile approved items for country manager release
             </p>
-            <button className="py-2.5 px-5 bg-[#0747A1] text-white text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:opacity-95 border-none cursor-pointer transition-all mt-2">
+            {/* 🛠️ WIRED: Button now redirects to the dedicated review sheet before final dispatch */}
+            <button 
+              onClick={() => router.push('/finance-officer/manifest')}
+              className="py-2.5 px-5 bg-[#0747A1] text-white text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:opacity-95 border-none cursor-pointer transition-all mt-2"
+            >
               compile approved manifestation
             </button>
           </div>
@@ -212,7 +215,7 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* CONTROLS BAR: Dual split layout combining tabs on left with search/region on right */}
+        {/* CONTROLS BAR: Tabs on left with search/region selectors on right */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-sm mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           
           {/* Left Side Filter Tabs */}
@@ -259,7 +262,7 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* Core Requisitions historical Matrix Table */}
+        {/* Core Requisitions Historical Matrix Table */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
