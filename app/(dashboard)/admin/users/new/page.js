@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { UserPlus, User, Mail, Shield, MapPin, Loader2, AlertCircle, CheckCircle2, ArrowLeft, Users, LogOut } from 'lucide-react';
+import { UserPlus, User, Mail, Loader2, AlertCircle, CheckCircle2, ArrowLeft, Users, LogOut, Copy, Check } from 'lucide-react';
 
 function AdminNavbar({ activeRoute, onSignOut }) {
   return (
@@ -44,6 +44,8 @@ export default function InviteStaffPage() {
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // 🛠️ ALL 13 REGIONAL HUBS LINKED IN
   const hubsList = [
@@ -64,7 +66,7 @@ export default function InviteStaffPage() {
 
   const handleSendInvite = async (e) => {
     e.preventDefault();
-    setError(''); setSuccessMessage('');
+    setError(''); setSuccessMessage(''); setInviteLink(''); setCopied(false);
     if (!email || !name) return setError('all foundation details are required.');
     setIsLoadingAction(true);
 
@@ -77,12 +79,25 @@ export default function InviteStaffPage() {
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'failed dispatching security link.');
 
-      setSuccessMessage(`secure invitation dispatched successfully to ${email.toLowerCase()}!`);
+      setSuccessMessage(`secure workspace link provisioned for ${email.toLowerCase()}!`);
+      if (data.inviteLink) {
+        setInviteLink(data.inviteLink);
+      }
       setEmail(''); setName('');
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoadingAction(false);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      setError('Failed to copy link to clipboard.');
     }
   };
 
@@ -104,6 +119,44 @@ export default function InviteStaffPage() {
 
         {error && <div className="p-3.5 bg-red-50 border-l-4 border-l-[#991B1B] text-xs font-semibold text-[#991B1B] flex items-center gap-2 rounded-r-lg"><AlertCircle className="w-4 h-4 shrink-0" />{error}</div>}
         {successMessage && <div className="p-3.5 bg-green-50 border-l-4 border-l-[#16A34A] text-xs font-semibold text-[#166534] flex items-center gap-2 rounded-r-lg"><CheckCircle2 className="w-4 h-4 shrink-0" />{successMessage}</div>}
+
+        {/* 🔗 DYNAMIC COPYABLE INVITATION BOX COMPONENT */}
+        {inviteLink && (
+          <div className="p-5 bg-blue-50 border border-[#EFF6FF] rounded-xl shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider">Share secure workspace link</span>
+              <span className="text-[10px] text-gray-400 font-medium lowercase">bypasses email delivery restriction</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded-lg">
+              <input 
+                type="text" 
+                readOnly 
+                value={inviteLink} 
+                className="w-full text-xs font-medium text-slate-600 bg-transparent border-none outline-none overflow-x-auto"
+              />
+              <button 
+                type="button"
+                onClick={copyToClipboard}
+                className="p-1.5 rounded-md hover:bg-slate-100 border-none bg-transparent cursor-pointer text-slate-500 hover:text-[#0747A1] transition-colors flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-green-600" />
+                    <span className="text-green-600">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-[11px] font-medium text-slate-500 leading-normal">
+              Send this custom token path to your team member via WhatsApp or chat. Once clicked, they will bypass standard login barriers and land right on your workspace confirmation page.
+            </p>
+          </div>
+        )}
 
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm p-6 sm:p-10 space-y-6">
           <div className="flex flex-col border-b border-gray-100 pb-4">
@@ -133,6 +186,7 @@ export default function InviteStaffPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="uppercase tracking-wider text-[10px] text-gray-400">system permission role</label>
                 <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full py-2.5 px-4 bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg font-bold text-gray-700 focus:outline-none text-xs lowercase cursor-pointer">
+                  <option value="admin">admin</option>
                   <option value="requester">requester</option>
                   <option value="finance-officer">finance officer</option>
                   <option value="head-of-operations">head of operations</option>

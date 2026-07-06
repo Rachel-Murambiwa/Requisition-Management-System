@@ -17,9 +17,11 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'missing parameters' }, { status: 400 });
     }
 
-    // 🌐 DYNAMIC ORIGIN CATCH: Detects if the call is local or live on Vercel
+    // 🌐 DYNAMIC ORIGIN CATCH: Falls back to live production domain to prevent localhost traps
     const { origin } = new URL(request.url);
+    const targetRedirectUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://requisition-management-system-3oyyro6ac.vercel.app';
 
+    // 🚀 EMAIL DISPATCH: Tells Supabase to route an official confirmation message through Resend SMTP
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email.trim(),
       {
@@ -28,8 +30,7 @@ export async function POST(request) {
           role: role, 
           hub_name: hub_name 
         },
-        // 🚀 Dynamic link generation
-        redirectTo: `${origin}/welcome` 
+        redirectTo: `${targetRedirectUrl}/welcome` 
       }
     );
 
