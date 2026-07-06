@@ -1,20 +1,18 @@
+export const dynamic = 'force-dynamic';
+
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-// Initialize the transit wrapper engine using your secret environment variables
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-/* * CRITICAL SECURITY LAYER: Use the secret Service Role Key here to bypass 
- * Row-Level Security so the background script can query user directory profiles freely.
- */
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
 export async function POST(req) {
   try {
+    // 🛠️ MOVE INITIALIZATION INSIDE THE HANDLER TO PREVENT VERCEL BUILD-TIME CRASHES
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
     const body = await req.json();
     
     // Catch the raw payload data frame emitted by the Supabase database insert webhook
@@ -44,7 +42,6 @@ export async function POST(req) {
 
     // 2. Execute transactional email transmission batch block
     await resend.emails.send({
-      // 🛠️ UPDATED FOR TESTING: Swapped to onboarding@resend.dev to bypass unverified domain blocks
       from: 'Uncommon RMS <onboarding@resend.dev>', 
       to: recipientEmails,
       subject: `[RMS ALERT] ${title.toLowerCase()}`,

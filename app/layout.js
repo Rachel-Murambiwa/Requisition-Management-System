@@ -1,9 +1,10 @@
-import localFont from 'next/font/local';
+import { Inter } from 'next/font/google';
 import '../styles/globals.css';
 
-const avenir = localFont({
-  src: '../fonts/AvenirNext-Bold.woff2',
-  variable: '--font-avenir',
+// 🛠️ FIX: Using Next.js Google Fonts to bypass the corrupted local binary font file
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-avenir', // Keeping the variable name identical so your CSS files don't break!
 });
 
 export const metadata = {
@@ -13,7 +14,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={avenir.variable}>
+    <html lang="en" className={inter.variable}>
       <body className="antialiased bg-white text-[#111827]">
         {children}
       </body>

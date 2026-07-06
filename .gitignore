@@ -6,3 +6,5 @@
 # Next.js build tokens
 .next/
 node_modules/
+.vercel
+.env*
