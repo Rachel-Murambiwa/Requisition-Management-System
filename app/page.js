@@ -30,7 +30,7 @@ export default function LoginGateway() {
     setError("");
 
     try {
-      // Direct handshake with Supabase Auth backend
+      // 1. Handshake with Supabase Auth backend
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
@@ -38,15 +38,40 @@ export default function LoginGateway() {
 
       if (authError) throw authError;
 
-      // Fetch user metadata or database profile role to route appropriately
-      const userRole = data?.user?.user_metadata?.role || 'requester';
-      
-      // Strict role-based routing control loops
-      if (userRole === 'admin') router.push('/admin');
-      else if (userRole === 'finance-officer') router.push('/finance-officer');
-      else if (userRole === 'head-of-operations') router.push('/head-of-operations');
-      else if (userRole === 'country-manager') router.push('/country-manager');
-      else router.push('/requester');
+      const user = data?.user;
+
+      if (user) {
+        // 2. ✨ FIXED: Fetch the actual profile role from your database table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError || !profile) {
+          console.error("Profile row missing or failed to fetch:", profileError);
+          // Standard fallback if database table entry isn't complete yet
+          router.push('/dashboard');
+          return;
+        }
+
+        const userRole = profile.role;
+        
+        // 3. 🚀 FIXED ROUTING: Strict role-based routing matching your routes
+        if (userRole === 'admin') {
+          router.push('/admin-dashboard');
+        } else if (userRole === 'finance-officer') {
+          router.push('/finance-officer-dashboard');
+        } else if (userRole === 'head-of-operations') {
+          router.push('/head-of-operations-dashboard');
+        } else if (userRole === 'country-manager') {
+          router.push('/country-manager-dashboard');
+        } else if (userRole === 'requester') {
+          router.push('/requester-dashboard');
+        } else {
+          router.push('/dashboard');
+        }
+      }
 
     } catch (err) {
       setError(err.message || "authentication checkpoint failed. check credentials.");

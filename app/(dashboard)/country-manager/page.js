@@ -13,40 +13,42 @@ import {
   Activity, 
   FileText,
   CreditCard,
-  CheckCircle2
+  CheckCircle2,
+  History,
+  Layers,
+  Calendar
 } from 'lucide-react';
 
 export default function CountryManagerDashboard() {
   const router = useRouter();
   
-  // 🛠️ FIXED: Wrapped initialization to guarantee a single persistent client instance across render flashes
   const [supabase] = useState(() => createClient());
-  
-  // Initialize state as an empty array ready for real-time relational data pipelines
   const [items, setItems] = useState([]);
   const [viewMode, setViewMode] = useState("manifest"); // 'manifest' or 'analytics'
-  const [disbursalStatus, setDisbursalStatus] = useState("idle"); // 'idle', 'processing', 'completed'
+  const [manifestScope, setManifestScope] = useState("current"); // 'current' or 'history'
+  const [disbursalStatus, setDisbursalStatus] = useState("idle"); 
   const [selectedChannel, setSelectedChannel] = useState("ecocash corporate wallet");
 
-  // Fetch all pre-vetted requisitions cleared by the Finance Officer
+  // Fetch both active approved items and historical disbursed entries
   useEffect(() => {
     const fetchApprovedManifestPool = async () => {
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
-        .eq('status', 'approved'); // Pulls items cleared forward to the master batch
+        .in('status', ['approved', 'disbursed']); 
 
       if (!error && data) {
-        // Safe mapping engine shapes table rows to fit your spreadsheet matrix structure
         const structuredPool = data.map(row => ({
           id: row.id,
+          status: row.status,
           desc: row.justification || row.description || 'operational fund allocation',
           class: row.class || "Core Programs",
           location: row.location || row.hub_name || "Harare",
           section: row.section || "Admin",
           category: row.category || "General Procurement",
           qty: 1,
-          unitPrice: parseFloat(row.amount) || 0
+          unitPrice: parseFloat(row.amount) || 0,
+          date: row.updated_at || row.created_at
         }));
         setItems(structuredPool);
       } else if (error) {
@@ -62,8 +64,12 @@ export default function CountryManagerDashboard() {
     router.push('/login');
   };
 
-  // --- MATHEMATICAL AGGREGATION ENGINES ---
-  const regionalTotals = items.reduce((acc, line) => {
+  // --- REGIONAL & HISTORICAL SEPARATION FILTERING ---
+  const displayedItems = items.filter(item => 
+    manifestScope === 'current' ? item.status === 'approved' : item.status === 'disbursed'
+  );
+
+  const regionalTotals = displayedItems.reduce((acc, line) => {
     const totalCost = line.qty * line.unitPrice;
     const loc = line.location.toLowerCase();
     
@@ -76,7 +82,49 @@ export default function CountryManagerDashboard() {
 
   const grandTotal = Object.values(regionalTotals).reduce((a, b) => a + b, 0);
 
-  const structuredCategories = items.reduce((acc, curr) => {
+  // Helper calculation engine specifically tracking live active items for the chart card
+  const activeGrandTotal = items
+    .filter(i => i.status === 'approved')
+    .reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
+
+  const categoryMetrics = displayedItems.reduce((acc, curr) => {
+    acc[curr.category] = (acc[curr.category] || 0) + (curr.qty * curr.unitPrice);
+    return acc;
+  }, {});
+
+  // 🧠 CHRONOLOGICAL HISTORICAL AGGREGATION ENGINE
+  // Groups past records by "Month Year" strings derived from database timestamps
+  const monthlyHistoryGroups = items
+    .filter(item => item.status === 'disbursed')
+    .reduce((acc, curr) => {
+      const dateObj = new Date(curr.date);
+      const monthYear = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toLowerCase();
+      
+      let monthNode = acc.find(m => m.period === monthYear);
+      if (!monthNode) {
+        monthNode = { period: monthYear, total: 0, categories: [] };
+        acc.push(monthNode);
+      }
+      monthNode.total += (curr.qty * curr.unitPrice);
+
+      let catNode = monthNode.categories.find(c => c.category === curr.category);
+      if (!catNode) {
+        catNode = { category: curr.category, sections: [] };
+        monthNode.categories.push(catNode);
+      }
+
+      let secNode = catNode.sections.find(s => s.title === curr.section);
+      if (!secNode) {
+        secNode = { title: curr.section, lines: [] };
+        catNode.sections.push(secNode);
+      }
+      secNode.lines.push(curr);
+
+      return acc;
+    }, []);
+
+  // Structural mapping engine used to loop through items for the current active list
+  const currentActiveCategories = displayedItems.reduce((acc, curr) => {
     let catNode = acc.find(c => c.category === curr.category);
     if (!catNode) {
       catNode = { category: curr.category, sections: [] };
@@ -91,20 +139,11 @@ export default function CountryManagerDashboard() {
     return acc;
   }, []);
 
-  const categoryMetrics = items.reduce((acc, curr) => {
-    acc[curr.category] = (acc[curr.category] || 0) + (curr.qty * curr.unitPrice);
-    return acc;
-  }, {});
-
-  // Executes the live final release payout handshake across your database ledger
   const runDisbursalRelease = async () => {
     setDisbursalStatus("processing");
-
-    // Extract all tracking IDs currently loaded in the batch matrix array
-    const itemIdsToRelease = items.map(i => i.id);
+    const itemIdsToRelease = displayedItems.map(i => i.id);
 
     try {
-      // 1. Update the master voucher index rows to disbursed status parameters
       const { error: updateError } = await supabase
         .from('requisitions')
         .update({ status: 'disbursed' })
@@ -112,18 +151,17 @@ export default function CountryManagerDashboard() {
 
       if (updateError) throw updateError;
 
-      // 2. 🚀 OPTIONAL EXTENSION PLACEHOLDER: Insert notification rows here if you want 
-      //    to instantly signal requesters that their funding is dispatched!
-
       setTimeout(() => {
         setDisbursalStatus("completed");
-        setItems([]); // Clear screen list frame since items are successfully pushed out of pipeline
+        setItems(prev => prev.map(item => 
+          itemIdsToRelease.includes(item.id) ? { ...item, status: 'disbursed' } : item
+        ));
       }, 1200);
 
     } catch (err) {
       console.error("treasury execution error:", err.message);
       setDisbursalStatus("idle");
-      alert("failed releasing capital. verify profile role-based privileges mapping.");
+      alert("failed releasing capital. verify profile privileges layout mapping.");
     }
   };
 
@@ -189,128 +227,230 @@ export default function CountryManagerDashboard() {
         )}
 
         {viewMode === 'manifest' ? (
-          <div className="w-full bg-white border border-[#E5E7EB] rounded-lg shadow-sm p-6 sm:p-10 print:border-none print:shadow-none animate-fadeIn">
+          <div className="space-y-4">
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start border-b border-gray-200 pb-6">
-              <div className="border border-gray-300 rounded overflow-hidden max-w-sm">
-                <div className="bg-[#0747A1] text-white px-3 py-1 text-xs font-bold uppercase tracking-wider">billed to</div>
-                <div className="p-3 text-xs text-[#111827] font-medium leading-relaxed">
-                  <div className="font-bold text-sm text-[#0A1628]">Uncommon.org Inc</div>
-                  <div>Peter Kazickas</div>
-                  <div>5 Hamlin Lane</div>
-                  <div>Amagansett, NY 11930</div>
-                </div>
-              </div>
-
-              <div className="md:text-right space-y-3">
-                <h2 className="text-2xl font-bold text-[#0A1628] lowercase">requisition request</h2>
-                <div className="inline-block text-left border border-gray-200 bg-gray-50 rounded p-2.5 text-xs font-medium space-y-0.5">
-                  <div><span className="text-[#4B5563]">Invoice No:</span> <span className="font-mono font-bold text-[#0A1628]">1106</span></div>
-                  {/* 📆 UPDATED: Formats dynamically to match current tracking context dates */}
-                  <div><span className="text-[#4B5563]">Approval Date:</span> <span className="font-mono font-bold text-[#0A1628]">{new Date().toISOString().split('T')[0].replace(/-/g, '/')}</span></div>
-                </div>
-              </div>
+            {/* 🕒 HISTORICAL PIPELINE SCOPE TOGGLE CONTROLS */}
+            <div className="flex justify-start gap-2 bg-gray-200/60 p-1 rounded-lg max-w-md border border-gray-300 print:hidden">
+              <button 
+                onClick={() => setManifestScope('current')}
+                className={`flex-1 py-1.5 rounded text-xs font-bold flex items-center justify-center gap-2 border-none cursor-pointer ${manifestScope === 'current' ? 'bg-white text-[#0A1628] shadow-sm' : 'text-gray-500 bg-transparent'}`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>active live batch</span>
+              </button>
+              <button 
+                onClick={() => setManifestScope('history')}
+                className={`flex-1 py-1.5 rounded text-xs font-bold flex items-center justify-center gap-2 border-none cursor-pointer ${manifestScope === 'history' ? 'bg-white text-[#0A1628] shadow-sm' : 'text-gray-500 bg-transparent'}`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>past months history</span>
+              </button>
             </div>
 
-            <div className="my-8 flex flex-col md:flex-row md:justify-between md:items-end gap-6">
-              <div className="w-full max-w-sm border border-gray-300 rounded overflow-hidden shadow-sm">
-                <div className="bg-[#0747A1] text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider">payment amounts</div>
-                <div className="p-4 bg-white space-y-3">
-                  <div className="text-xs font-bold text-[#0A1628]">Purpose of Funds: <span className="font-medium text-[#4B5563]">June Program Expenses</span></div>
-                  <div className="space-y-1.5 text-xs font-medium text-[#4B5563] border-b border-gray-100 pb-2.5">
-                    <div className="flex justify-between"><span>Harare</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['harare'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
-                    <div className="flex justify-between"><span>Vic Falls</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['victoria falls'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
-                    <div className="flex justify-between"><span>Bulawayo</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['bulawayo'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+            <div className="w-full bg-white border border-[#E5E7EB] rounded-lg shadow-sm p-6 sm:p-10 print:border-none print:shadow-none animate-fadeIn">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start border-b border-gray-200 pb-6">
+                <div className="border border-gray-300 rounded overflow-hidden max-w-sm">
+                  <div className="bg-[#0747A1] text-white px-3 py-1 text-xs font-bold uppercase tracking-wider">billed to</div>
+                  <div className="p-3 text-xs text-[#111827] font-medium leading-relaxed">
+                    <div className="font-bold text-sm text-[#0A1628]">Uncommon.org Inc</div>
+                    <div>Peter Kazickas</div>
+                    <div>5 Hamlin Lane</div>
+                    <div>Amagansett, NY 11930</div>
                   </div>
-                  <div className="flex justify-between items-baseline text-sm font-bold text-[#0A1628]">
-                    <span>GRAND TOTAL</span>
-                    <span className="font-mono text-[#0747A1] text-base">${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+
+                <div className="md:text-right space-y-3">
+                  <h2 className="text-2xl font-bold text-[#0A1628] lowercase">
+                    {manifestScope === 'current' ? 'requisition request' : 'archived manifest ledger'}
+                  </h2>
+                  <div className="inline-block text-left border border-gray-200 bg-gray-50 rounded p-2.5 text-xs font-medium space-y-0.5">
+                    <div><span className="text-[#4B5563]">Voucher Index ID:</span> <span className="font-mono font-bold text-[#0A1628]">{manifestScope === 'current' ? '1106' : 'HIST-LOG'}</span></div>
+                    <div><span className="text-[#4B5563]">Audit Tracking Date:</span> <span className="font-mono font-bold text-[#0A1628]">{new Date().toISOString().split('T')[0].replace(/-/g, '/')}</span></div>
                   </div>
                 </div>
               </div>
 
-              <div className="p-5 border border-slate-200 bg-slate-50 rounded-lg w-full max-w-md space-y-4 print:hidden">
-                <div className="text-xs font-bold text-[#0A1628] uppercase tracking-wider flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-[#0747A1]" />
-                  <span>treasury disbursal release channel</span>
+              <div className="my-8 flex flex-col md:flex-row md:justify-between md:items-end gap-6">
+                <div className="w-full max-w-sm border border-gray-300 rounded overflow-hidden shadow-sm">
+                  <div className="bg-[#0747A1] text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider">payment metrics total</div>
+                  <div className="p-4 bg-white space-y-3">
+                    <div className="text-xs font-bold text-[#0A1628]">Data Filter Scope: <span className="font-medium text-[#4B5563] lowercase">{manifestScope === 'current' ? 'June Program Expenses' : 'accumulated historic balances'}</span></div>
+                    <div className="space-y-1.5 text-xs font-medium text-[#4B5563] border-b border-gray-100 pb-2.5">
+                      <div className="flex justify-between"><span>Harare</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['harare'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+                      <div className="flex justify-between"><span>Vic Falls</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['victoria falls'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+                      <div className="flex justify-between"><span>Bulawayo</span><span className="font-mono font-bold text-[#0A1628]">${regionalTotals['bulawayo'].toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+                    </div>
+                    <div className="flex justify-between items-baseline text-sm font-bold text-[#0A1628]">
+                      <span>GRAND TOTAL</span>
+                      <span className="font-mono text-[#0747A1] text-base">${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
                 </div>
-                
-                <select 
-                  value={selectedChannel}
-                  onChange={(e) => setSelectedChannel(e.target.value)}
-                  disabled={disbursalStatus !== "idle"}
-                  className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0747A1] uppercase tracking-wide cursor-pointer"
-                >
-                  <option value="ecocash corporate wallet">ecocash corporate wallet run</option>
-                  <option value="direct bank transfer">direct bank wire transfer batch</option>
-                  <option value="petty cash pool">petty cash allocation ledger</option>
-                </select>
 
-                {items.length > 0 ? (
-                  <button
-                    onClick={runDisbursalRelease}
-                    disabled={disbursalStatus === "processing"}
-                    className={`w-full py-2.5 px-4 rounded font-bold text-xs uppercase tracking-wider text-white shadow transition-all border-none cursor-pointer ${
-                      disbursalStatus === 'processing' ? 'bg-slate-400 cursor-wait' : 'bg-[#0747A1] hover:opacity-90'
-                    }`}
-                  >
-                    {disbursalStatus === 'idle' ? `authorize & disburse $${grandTotal.toLocaleString()}` : "processing treasury payout pipelines..."}
-                  </button>
-                ) : (
-                  <div className="text-center p-3 text-xs bg-gray-100 rounded text-gray-400 font-medium select-none lowercase">
-                    no pending master vouchers loaded to release
+                {manifestScope === 'current' && (
+                  <div className="p-5 border border-slate-200 bg-slate-50 rounded-lg w-full max-w-md space-y-4 print:hidden">
+                    <div className="text-xs font-bold text-[#0A1628] uppercase tracking-wider flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-[#0747A1]" />
+                      <span>treasury disbursal release channel</span>
+                    </div>
+                    
+                    <select 
+                      value={selectedChannel}
+                      onChange={(e) => setSelectedChannel(e.target.value)}
+                      disabled={disbursalStatus !== "idle"}
+                      className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0747A1] uppercase tracking-wide cursor-pointer"
+                    >
+                      <option value="ecocash corporate wallet">ecocash corporate wallet run</option>
+                      <option value="direct bank transfer">direct bank wire transfer batch</option>
+                      <option value="petty cash pool">petty cash allocation ledger</option>
+                    </select>
+
+                    {displayedItems.length > 0 ? (
+                      <button
+                        onClick={runDisbursalRelease}
+                        disabled={disbursalStatus === "processing"}
+                        className={`w-full py-2.5 px-4 rounded font-bold text-xs uppercase tracking-wider text-white shadow transition-all border-none cursor-pointer ${
+                          disbursalStatus === 'processing' ? 'bg-slate-400 cursor-wait' : 'bg-[#0747A1] hover:opacity-90'
+                        }`}
+                      >
+                        {disbursalStatus === 'idle' ? `authorize & disburse $${grandTotal.toLocaleString()}` : "processing treasury payout pipelines..."}
+                      </button>
+                    ) : (
+                      <div className="text-center p-3 text-xs bg-gray-100 rounded text-gray-400 font-medium select-none lowercase">
+                        no pending master vouchers loaded to release
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
 
-            <div className="mt-8 overflow-x-auto">
-              <table className="w-full text-left border-collapse border border-gray-200">
-                <thead>
-                  <tr className="border-b border-gray-400 text-[10px] font-bold text-[#4B5563] uppercase tracking-wider bg-gray-50 select-none">
-                    <th className="py-2.5 px-3 w-5/12">description</th>
-                    <th className="py-2.5 px-3">class</th>
-                    <th className="py-2.5 px-3">location</th>
-                    <th className="py-2.5 px-3 text-center">qty</th>
-                    <th className="py-2.5 px-3 text-right">unit price</th>
-                    <th className="py-2.5 px-3 text-right">total</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs text-slate-800">
-                  {items.length > 0 ? (
-                    structuredCategories.map((cat, cIdx) => (
-                      <Fragment key={cIdx}>
-                        <tr className="bg-[#FBBF24]/90 border-t border-b border-gray-300">
-                          <td colSpan="6" className="py-2 px-3 font-bold text-[#0A1628] text-xs lowercase">{cat.category}</td>
-                        </tr>
-                        {cat.sections.map((sec, sIdx) => (
-                          <Fragment key={sIdx}>
-                            <tr className="bg-gray-100/60">
-                              <td colSpan="6" className="py-1.5 px-3 font-extrabold text-[#0A1628] pl-4 border-b border-gray-200 lowercase">{sec.title}</td>
+              {/* 📋 CHRONOLOGICAL MATRIX INTERFACE TABULATION */}
+              <div className="mt-8 space-y-12">
+                {manifestScope === 'current' ? (
+                  // STANDARD LIVE ACTIVE RENDERING
+                  <table className="w-full text-left border-collapse border border-gray-200">
+                    <thead>
+                      <tr className="border-b border-gray-400 text-[10px] font-bold text-[#4B5563] uppercase tracking-wider bg-gray-50 select-none">
+                        <th className="py-2.5 px-3 w-5/12">description</th>
+                        <th className="py-2.5 px-3">class</th>
+                        <th className="py-2.5 px-3">location</th>
+                        <th className="py-2.5 px-3 text-center">qty</th>
+                        <th className="py-2.5 px-3 text-right">unit price</th>
+                        <th className="py-2.5 px-3 text-right">total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs text-slate-800">
+                      {displayedItems.length > 0 ? (
+                        currentActiveCategories.map((cat, cIdx) => (
+                          <Fragment key={cIdx}>
+                            <tr className="bg-[#FBBF24]/90 border-t border-b border-gray-300">
+                              <td colSpan="6" className="py-2 px-3 font-bold text-[#0A1628] text-xs lowercase">{cat.category}</td>
                             </tr>
-                            {sec.lines.map((line, lIdx) => (
-                              <tr key={lIdx} className="hover:bg-gray-50/50 border-b border-gray-200">
-                                <td className="py-3 px-3 pl-6 text-gray-700 font-medium lowercase">{line.desc}</td>
-                                <td className="py-3 px-3 text-gray-500 font-medium lowercase">{line.class}</td>
-                                <td className="py-3 px-3 text-gray-600 font-bold lowercase">{line.location}</td>
-                                <td className="py-3 px-3 text-center font-mono">{line.qty}</td>
-                                <td className="py-3 px-3 text-right font-mono text-gray-500">${line.unitPrice.toFixed(2)}</td>
-                                <td className="py-3 px-3 text-right font-mono font-bold text-[#0A1628]">${(line.qty * line.unitPrice).toFixed(2)}</td>
-                              </tr>
+                            {cat.sections.map((sec, sIdx) => (
+                              <Fragment key={sIdx}>
+                                <tr className="bg-gray-100/60">
+                                  <td colSpan="6" className="py-1.5 px-3 font-extrabold text-[#0A1628] pl-4 border-b border-gray-200 lowercase">{sec.title}</td>
+                                </tr>
+                                {sec.lines.map((line, lIdx) => (
+                                  <tr key={lIdx} className="hover:bg-gray-50/50 border-b border-gray-200">
+                                    <td className="py-3 px-3 pl-6 text-gray-700 font-medium lowercase">{line.desc}</td>
+                                    <td className="py-3 px-3 text-gray-500 font-medium lowercase">{line.class}</td>
+                                    <td className="py-3 px-3 text-gray-600 font-bold lowercase">{line.location}</td>
+                                    <td className="py-3 px-3 text-center font-mono">{line.qty}</td>
+                                    <td className="py-3 px-3 text-right font-mono text-gray-500">${line.unitPrice.toFixed(2)}</td>
+                                    <td className="py-3 px-3 text-right font-mono font-bold text-[#0A1628]">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </Fragment>
                             ))}
                           </Fragment>
-                        ))}
-                      </Fragment>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="text-center py-12 bg-white text-gray-400 select-none lowercase">
-                        no approved vouchers waiting inside master manifest pipeline.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="text-center py-12 bg-white text-gray-400 select-none lowercase">
+                            no vouchers matching this pipeline layer state description.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  // DYNAMIC CHRONOLOGICAL MONTH BREAKDOWN RENDERING
+                  <div className="space-y-10">
+                    {monthlyHistoryGroups.length > 0 ? (
+                      monthlyHistoryGroups.map((monthGroup, mIdx) => (
+                        <div key={mIdx} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                          
+                          {/* Chronological Month Summary Header strip */}
+                          <div className="bg-[#0A1628] text-white px-4 py-3 flex items-center justify-between select-none">
+                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider">
+                              <Calendar className="w-4 h-4 text-[#0747A1]" />
+                              <span>{monthGroup.period} Audit Ledger</span>
+                            </div>
+                            <div className="text-xs font-mono font-bold">
+                              Released: <span className="text-[#FBBF24]">${monthGroup.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          </div>
+
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="border-b border-gray-300 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-gray-50/70">
+                                <th className="py-2 px-3 w-5/12">description</th>
+                                <th className="py-2 px-3">class</th>
+                                <th className="py-2 px-3">location</th>
+                                <th className="py-2 px-3 text-center">qty</th>
+                                <th className="py-2 px-3 text-right">unit price</th>
+                                <th className="py-2 px-3 text-right">total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-xs text-slate-700">
+                              {monthGroup.categories.map((cat, cIdx) => (
+                                <Fragment key={cIdx}>
+                                  <tr className="bg-slate-100 border-t border-b border-slate-200">
+                                    <td colSpan="6" className="py-1.5 px-3 font-bold text-slate-800 text-xs lowercase">{cat.category}</td>
+                                  </tr>
+                                  {cat.sections.map((sec, sIdx) => (
+                                    <Fragment key={sIdx}>
+                                      <tr className="bg-slate-50/50">
+                                        <td colSpan="6" className="py-1 px-3 font-bold text-slate-600 pl-4 border-b border-slate-100 lowercase">{sec.title}</td>
+                                      </tr>
+                                      {sec.lines.map((line, lIdx) => (
+                                        <tr key={lIdx} className="hover:bg-gray-50/30 border-b border-gray-100">
+                                          <td className="py-2.5 px-3 pl-6 text-gray-600 lowercase">{line.desc}</td>
+                                          <td className="py-2.5 px-3 text-gray-400 lowercase">{line.class}</td>
+                                          <td className="py-2.5 px-3 text-gray-500 font-medium lowercase">{line.location}</td>
+                                          <td className="py-2.5 px-3 text-center font-mono">{line.qty}</td>
+                                          <td className="py-2.5 px-3 text-right font-mono text-gray-400">${line.unitPrice.toFixed(2)}</td>
+                                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                                        </tr>
+                                      ))}
+                                    </Fragment>
+                                  ))}
+                                </Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-16 bg-white border border-gray-200 border-dashed rounded-xl text-gray-400 select-none lowercase">
+                        no historic distributed records found in database registry.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ✍️ MOVED SIGNATURE AREA: Shifted into the invoice framework container */}
+              <div className="pt-12 mt-8 border-t border-dashed border-gray-300 flex justify-between items-end text-xs text-gray-500">
+                <div className="leading-relaxed text-[11px]">autogenerated via uncommon rms audit systems module<br />internal use only • confidential programmatic financial ledger report</div>
+                <div className="text-center w-48 shrink-0">
+                  <div className="w-full h-px bg-gray-400 mb-2" />
+                  <div className="text-[10px] font-bold text-[#0A1628] uppercase tracking-widest">head of operations signature</div>
+                </div>
+              </div>
+
             </div>
           </div>
         ) : (
@@ -326,7 +466,7 @@ export default function CountryManagerDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
               <div className="space-y-3">
                 <h3 className="text-xs font-bold uppercase text-[#4B5563] flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-[#0747A1]" /> 6-cycle operations investment scaling</h3>
-                <div className="border border-gray-100 rounded p-4 bg-white shadow-sm">
+                <div className="border border-gray-100 rounded p-4 bg-white shadow-sm space-y-4">
                   <svg viewBox="0 0 500 200" className="w-full h-auto overflow-visible">
                     <defs>
                       <linearGradient id="cmGrad" x1="0" y1="0" x2="0" y2="1">
@@ -349,8 +489,49 @@ export default function CountryManagerDashboard() {
                     <text x="400" y="194" className="text-[9px] font-bold fill-gray-400 font-mono uppercase">may</text>
                     <text x="440" y="194" className="text-[9px] font-bold fill-[#0747A1] font-mono uppercase">jun (approved)</text>
                     
-                    <text x="420" y="25" className="text-xs font-black fill-[#0747A1] font-mono">${grandTotal.toLocaleString()}</text>
+                    <text x="420" y="25" className="text-xs font-black fill-[#0747A1] font-mono">${activeGrandTotal.toLocaleString()}</text>
                   </svg>
+
+                  {/* 📊 Small Month & Total Amount Breakdown Table inside chart card */}
+                  <div className="pt-3 border-t border-gray-100">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 text-[9px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-200">
+                          <th className="py-1.5 px-2">Cycle Month</th>
+                          <th className="py-1.5 px-2 text-right">Total Amount (USD)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-gray-600 font-medium">
+                        <tr className="border-b border-gray-100 hover:bg-gray-50/40">
+                          <td className="py-1.5 px-2 lowercase">january</td>
+                          <td className="py-1.5 px-2 text-right font-mono">$4,250.00</td>
+                        </tr>
+                        <tr className="border-b border-gray-100 hover:bg-gray-50/40">
+                          <td className="py-1.5 px-2 lowercase">february</td>
+                          <td className="py-1.5 px-2 text-right font-mono">$4,250.00</td>
+                        </tr>
+                        <tr className="border-b border-gray-100 hover:bg-gray-50/40">
+                          <td className="py-1.5 px-2 lowercase">march</td>
+                          <td className="py-1.5 px-2 text-right font-mono">$2,100.00</td>
+                        </tr>
+                        <tr className="border-b border-gray-100 hover:bg-gray-50/40">
+                          <td className="py-1.5 px-2 lowercase">april</td>
+                          <td className="py-1.5 px-2 text-right font-mono">$6,800.00</td>
+                        </tr>
+                        <tr className="border-b border-gray-100 hover:bg-gray-50/40">
+                          <td className="py-1.5 px-2 lowercase">may</td>
+                          <td className="py-1.5 px-2 text-right font-mono">$3,450.00</td>
+                        </tr>
+                        <tr className="bg-[#EFF6FF] font-bold text-[#0A1628]">
+                          <td className="py-2 px-2 lowercase text-[#0747A1]">june (current active)</td>
+                          <td className="py-2 px-2 text-right font-mono text-[#0747A1]">
+                            ${activeGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
                 </div>
               </div>
 
@@ -372,8 +553,44 @@ export default function CountryManagerDashboard() {
               </div>
             </div>
 
-            <div className="pt-6 border-t border-gray-100">
-              <h3 className="text-xs font-bold uppercase text-[#4B5563] mb-4 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> asset intensity allocation map</h3>
+            {/* 📊 EXACT AMOUNTS DATA LEDGER TABLE */}
+            <div className="pt-6 border-t border-gray-100 space-y-3">
+              <h3 className="text-xs font-bold uppercase text-[#4B5563] flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#0747A1]" /> 
+                <span>Exact Allocation Asset Matrix Ledger</span>
+              </h3>
+              <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-bold uppercase tracking-wider text-gray-500 select-none">
+                      <th className="py-3 px-4">operational category classification</th>
+                      <th className="py-3 px-4 text-right">exact allocated amount (usd)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs font-medium text-gray-700 divide-y divide-gray-100">
+                    {Object.entries(categoryMetrics).length > 0 ? (
+                      Object.entries(categoryMetrics).map(([catName, val]) => (
+                        <tr key={catName} className="hover:bg-gray-50/60 transition-colors">
+                          <td className="py-3 px-4 lowercase font-semibold text-slate-800">{catName}</td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-[#0A1628]">${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="2" className="text-center py-6 text-gray-400 font-medium lowercase">no metrics datasets currently loaded across selected channel pointer</td>
+                      </tr>
+                    )}
+                    <tr className="bg-slate-50 font-bold border-t-2 border-gray-300">
+                      <td className="py-3 px-4 uppercase text-[#0A1628]">Combined Volume Aggregate Sum</td>
+                      <td className="py-3 px-4 text-right font-mono text-[#0747A1] text-sm">${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-6">
+              <h3 className="text-xs font-bold uppercase text-[#4B5563] mb-4 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> asset intensity allocation map</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {Object.entries(categoryMetrics).map(([catName, val]) => {
                   const sharePercentage = grandTotal > 0 ? ((val / grandTotal) * 100).toFixed(0) : 0;
@@ -387,14 +604,6 @@ export default function CountryManagerDashboard() {
                     </div>
                   );
                 })}
-              </div>
-            </div>
-
-            <div className="pt-12 border-t border-dashed border-gray-300 flex justify-between items-end text-xs text-gray-500">
-              <div className="leading-relaxed text-[11px]">autogenerated via uncommon rms audit systems module<br />internal use only • confidential programmatic financial ledger report</div>
-              <div className="text-center w-48 shrink-0">
-                <div className="w-full h-px bg-gray-400 mb-2" />
-                <div className="text-[10px] font-bold text-[#0A1628] uppercase tracking-widest">head of operations signature</div>
               </div>
             </div>
 
