@@ -8,15 +8,11 @@ export async function middleware(req) {
   }
 
   const res = NextResponse.next();
-  
-  // Create an authenticated server-side context client matching Next.js middleware rules
   const supabase = createMiddlewareClient({ req, res });
 
   // Refresh and unwrap the active authentication token session parameters
   const { data: { session } } = await supabase.auth.getSession();
-  const user = session?.user;
-  const userRole = user?.user_metadata?.role;
-
+  
   const nextUrl = req.nextUrl.clone();
   const path = nextUrl.pathname;
 
@@ -26,7 +22,16 @@ export async function middleware(req) {
     return NextResponse.redirect(nextUrl);
   }
 
-  // 2. ISOLATION ROUTE MATRIX: Cross-examine metadata role strings against target path groups
+  // 2. ✨ FIXED: Fetch the user profile role dynamically from the database profiles table
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', session.user.id)
+    .single();
+
+  const userRole = profile?.role;
+
+  // 3. ISOLATION ROUTE MATRIX: Cross-examine database role strings against target path groups
   if (path.startsWith('/requester') && userRole !== 'requester') {
     nextUrl.pathname = '/unauthorised';
     return NextResponse.redirect(nextUrl);
@@ -55,16 +60,10 @@ export async function middleware(req) {
   return res;
 }
 
-// 🎯 ROUTE MATCHER FILTER: Exclude internal static assets, icons, and public landing frames
+// 🎯 ROUTE MATCHER FILTER
 export const config = {
   matcher: [
-    /*
-     * Match all corporate operational system dashboards except:
-     * - login (auth entry screen)
-     * - welcome / account activation views
-     * - unauthorised (403 landing error block)
-     * - static api assets or public files (_next/static, _next/image, favicon.ico)
-     */
+    // Safe broad exclusion rule allowing the login, unauthorized fallback screens, and static configurations to pass through freely
     '/((?!login|welcome|unauthorised|api/invite-staff|_next/static|_next/image|favicon.ico|fonts).*)',
   ],
 };
