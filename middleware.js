@@ -2,7 +2,7 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  // 🛠️ LOCAL DEV BYPASS: Allows you to view any dashboard page freely on localhost
+  // 🛠️ LOCAL DEV BYPASS
   if (process.env.NODE_ENV === 'development') {
     return NextResponse.next();
   }
@@ -18,20 +18,36 @@ export async function middleware(req) {
 
   // 1. AUTHENTICATION PROTECTION GUARD: Boot unauthenticated requests out to login terminal
   if (!session) {
-    nextUrl.pathname = '/login';
-    return NextResponse.redirect(nextUrl);
+    if (path !== '/login') {
+      nextUrl.pathname = '/login';
+      return NextResponse.redirect(nextUrl);
+    }
+    return res;
   }
 
-  // 2. ✨ FIXED: Fetch the user profile role dynamically from the database profiles table
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', session.user.id)
-    .single();
+  // 2. FETCH ROLE WITH FALLBACKS TO PREVENT EDGE DROPS
+  let userRole = session?.user?.user_metadata?.role;
 
-  const userRole = profile?.role;
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
 
-  // 3. ISOLATION ROUTE MATRIX: Cross-examine database role strings against target path groups
+    if (profile && !error) {
+      userRole = profile.role;
+    }
+  } catch (e) {
+    console.error("Middleware edge-db query bypassed:", e);
+  }
+
+  // If role lookup completely fails at the edge layer, allow client-side layout router to handle it
+  if (!userRole) {
+    return res;
+  }
+
+  // 3. ISOLATION ROUTE MATRIX (Matches your true app path groups)
   if (path.startsWith('/requester') && userRole !== 'requester') {
     nextUrl.pathname = '/unauthorised';
     return NextResponse.redirect(nextUrl);
@@ -60,10 +76,14 @@ export async function middleware(req) {
   return res;
 }
 
-// 🎯 ROUTE MATCHER FILTER
+// 🎯 TARGETED MATCHERS: Intercept dashboards only to protect authentication context
 export const config = {
   matcher: [
-    // Safe broad exclusion rule allowing the login, unauthorized fallback screens, and static configurations to pass through freely
-    '/((?!login|welcome|unauthorised|api/invite-staff|_next/static|_next/image|favicon.ico|fonts).*)',
+    '/admin/:path*',
+    '/country-manager/:path*',
+    '/finance-officer/:path*',
+    '/head-of-operations/:path*',
+    '/requester/:path*',
+    '/profile/:path*'
   ],
 };
