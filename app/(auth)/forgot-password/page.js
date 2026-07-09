@@ -20,10 +20,7 @@ export default function ForgotPasswordPage() {
       return;
     }
 
-    if (!email.endsWith('@uncommon.org')) {
-      setError('access restricted. please enter a valid uncommon.org staff email.');
-      return;
-    }
+    // 🔓 RESTRICTION LIFTED: Domain validation removed for testing flexibility
 
     setIsLoading(true);
     setError('');
@@ -69,7 +66,7 @@ export default function ForgotPasswordPage() {
                 recover your password
               </h1>
               <p className="text-sm text-[#4B5563] mt-2 tracking-normal">
-                enter your staff email to receive a secure recovery link
+                enter your email address to receive a secure recovery link
               </p>
             </div>
 
@@ -92,9 +89,9 @@ export default function ForgotPasswordPage() {
                     id="email-field"
                     type="email"
                     value={email}
-                    // ✨ FIXED: Clean event syntax enables normal browser input field reactivity
+                    // ✨ FIXED: Standard event binding configuration
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@uncommon.org"
+                    placeholder="your-email@example.com"
                     disabled={isLoading}
                     onKeyDown={(e) => e.key === 'Enter' && handleResetRequest()}
                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
