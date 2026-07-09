@@ -15,7 +15,10 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignIn = async () => {
+  const handleSignIn = async (e) => {
+    // Prevent natural browser submission if triggered via form element wraps
+    if (e) e.preventDefault();
+
     if (!email || !password) {
       setError('please enter both your email and password.');
       return;
@@ -26,7 +29,7 @@ export default function LoginPage() {
 
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -40,17 +43,27 @@ export default function LoginPage() {
 
       if (profileError) throw profileError;
 
+      // ✨ FIXED: Synced keys to match your exact database enum syntax strings
       const roleRedirects = {
-        requester: '/requester',
-        finance_officer: '/finance-officer',
-        head_of_operations: '/head-of-operations',
-        country_manager: '/country-manager',
-        admin: '/admin',
+        'requester': '/requester',
+        'finance-officer': '/finance-officer',
+        'head-of-operations': '/head-of-operations',
+        'country-manager': '/country-manager',
+        'admin': '/admin',
       };
 
-      router.push(roleRedirects[profile.role] || '/unauthorized');
+      const targetPath = roleRedirects[profile.role] || '/unauthorised';
+
+      // Force Next.js router engine cache to sync active authentication cookie contexts
+      router.refresh();
+
+      // Short timeout layout buffer to allow the engine to commit session tokens fully before navigation 
+      setTimeout(() => {
+        router.push(targetPath);
+      }, 150);
       
     } catch (err) {
+      console.error(err);
       setError('invalid login credentials. please try again.');
     } finally {
       setIsLoading(false);
@@ -83,15 +96,14 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Custom Inline Error Portal */}
         {error && (
-          <div className="mb-6 p-3 bg-[#FEE2E2] border border-l-4 border-l-[#991B1B] border-[#FECACA] rounded-r-md text-xs font-medium text-[#991B1B]">
+          <div className="mb-6 p-3 bg-[#FEE2E2] border border-l-4 border-l-[#991B1B] border-[#FECACA] rounded-r-md text-xs font-semibold text-[#991B1B]">
             {error}
           </div>
         )}
 
-        {/* Input Interactive Fields Layout */}
-        <div className="space-y-5">
+        {/* Form Container Wrapper ensuring proper submission tracking mechanics */}
+        <form onSubmit={handleSignIn} className="space-y-5">
           
           {/* Email Block */}
           <div className="flex flex-col gap-1.5">
@@ -107,7 +119,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@uncommon.org"
                 disabled={isLoading}
-                className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
+                className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans font-medium"
               />
             </div>
           </div>
@@ -134,34 +146,34 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 disabled={isLoading}
-                onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
-                className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
+                className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans font-medium"
               />
               <button
                 type="button"
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
-                className="absolute right-3 text-[#9CA3AF] hover:text-[#4B5563] focus:outline-none"
+                className="absolute right-3 text-[#9CA3AF] hover:text-[#4B5563] focus:outline-none cursor-pointer"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          {/* Form Action CTA — No HTML form tag wrapper used */}
+          {/* Form Action CTA */}
           <div className="pt-2">
-            <div
-              onClick={!isLoading ? handleSignIn : undefined}
-              className={`w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase ${
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-semibold text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase ${
                 isLoading ? 'opacity-60 cursor-not-allowed bg-[#1A2E4A]' : ''
               }`}
             >
               {isLoading ? 'signing in...' : 'sign in'}
-            </div>
+            </button>
           </div>
 
-        </div>
+        </form>
 
       </div>
     </div>
