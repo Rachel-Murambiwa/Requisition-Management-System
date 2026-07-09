@@ -92,7 +92,8 @@ export default function ForgotPasswordPage() {
                     id="email-field"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.e.target.value)}
+                    // ✨ FIXED: Clean event syntax enables normal browser input field reactivity
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@uncommon.org"
                     disabled={isLoading}
                     onKeyDown={(e) => e.key === 'Enter' && handleResetRequest()}
