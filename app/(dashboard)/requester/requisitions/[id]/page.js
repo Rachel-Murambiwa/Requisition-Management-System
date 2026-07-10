@@ -18,9 +18,7 @@ import {
   MapPin,
   Briefcase,
   ExternalLink,
-  Loader2,
-  Send,
-  MessageSquare
+  Loader2
 } from 'lucide-react';
 
 export default function RequisitionDetailPage({ params: paramsPromise }) {
@@ -32,13 +30,6 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
   const [requisition, setRequisition] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // 💬 Conversation stream states for the live communication portal
-  const [chatMessages, setChatMessages] = useState([
-    { id: 1, sender: "system", text: "clarification channel opened for transaction audit thread.", time: "system log" },
-    { id: 2, sender: "finance desk", text: "rachel, the sub-total line on the powervale quote seems to omit the standard hub transport fee. could you cross-check if they included it in the final aggregate volume?", time: "jun 11, 10:45 am" }
-  ]);
-  const [newMessage, setNewMessage] = useState('');
 
   // Hydrate record profile data from Supabase live on load
   useEffect(() => {
@@ -65,19 +56,6 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
       fetchRequisitionRecord();
     }
   }, [requisitionId, supabase]);
-
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    setChatMessages([...chatMessages, {
-      id: Date.now(),
-      sender: "requester",
-      text: newMessage.toLowerCase().trim(),
-      time: "just now"
-    }]);
-    setNewMessage('');
-  };
 
   if (loading) {
     return (
@@ -126,9 +104,9 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Navigation Return Trigger */}
+        {/* Navigation Return Trigger (FIXED CLIPPING DIV PARENT HERE) */}
         <div 
           onClick={() => router.push('/requester')}
           className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-semibold transition-colors cursor-pointer mb-8 select-none"
@@ -137,11 +115,11 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
           <span className="lowercase">back to dashboard</span>
         </div>
 
-        {/* Responsive 12-Column Layout Grid matching the structural look */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Main Grid Splitting Data Panels and Workflow Timelines */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
           
-          {/* LEFT COLUMN PANEL: Core Document Overviews (Weight 7) */}
-          <div className="lg:col-span-7 bg-white border border-[#E5E7EB] rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
+          {/* Left Column: Core Document Overviews */}
+          <div className="lg:col-span-2 space-y-8 bg-white border border-[#E5E7EB] rounded-lg p-6 sm:p-8 shadow-sm">
             
             {/* Identity Descriptor Block */}
             <div>
@@ -202,7 +180,9 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
               </div>
             </div>
 
-            {/* Standard vs Travel Content Rendering Layer Split */}
+            {/* ============================================================== */}
+            {/* VIEW SUB-LAYER A: STANDARD COMPLIANCE DATA RENDERING LOOKUP   */}
+            {/* ============================================================== */}
             {!isTravelRequest ? (
               <div className="space-y-6 pt-2">
                 <div className="space-y-2 text-xs font-semibold text-gray-600">
@@ -214,6 +194,7 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
                   </div>
                 </div>
 
+                {/* Compliance Safe Vault File Index Matrix Row list */}
                 {requisition.documents && requisition.documents.length > 0 && (
                   <div className="space-y-3 text-xs font-semibold text-gray-600">
                     <h2 className="text-xs font-bold text-[#4B5563] uppercase tracking-wider">
@@ -239,7 +220,12 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
                 )}
               </div>
             ) : (
+              /* ============================================================== */
+              /* VIEW SUB-LAYER B: STRUCTURAL TRAVEL MANIFEST DATA RENDERING    */
+              /* ============================================================== */
               <div className="space-y-8 pt-4 border-t border-dashed border-gray-200 text-xs font-semibold animate-fadeIn text-gray-600">
+                
+                {/* 1. Crew Manifest Mapping */}
                 {requisition.travel_meta?.travelers && (
                   <div className="space-y-2">
                     <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-1.5"><Users className="w-3.5 h-3.5" /> traveling group personnel manifest</h3>
@@ -254,6 +240,7 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
                   </div>
                 )}
 
+                {/* 2. Daily Itinerary Map */}
                 {requisition.travel_meta?.itinerary && (
                   <div className="space-y-2">
                     <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-1.5"><Calendar className="w-3.5 h-3.5" /> scheduled itinerary destination route logs</h3>
@@ -268,6 +255,7 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
                   </div>
                 )}
 
+                {/* 3. Segmented Ledgers */}
                 {requisition.travel_meta?.breakdown && (
                   <div className="space-y-3">
                     <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-1.5"><Briefcase className="w-3.5 h-3.5" /> logistical funding category metrics</h3>
@@ -281,98 +269,55 @@ export default function RequisitionDetailPage({ params: paramsPromise }) {
                 )}
               </div>
             )}
+
           </div>
 
-          {/* RIGHT SIDEBAR PANEL MATRIX: Handles Tree Tracking and Live Chat Component (Weight 5) */}
-          <div className="lg:col-span-5 space-y-6">
+          {/* Right Column: Visual Real-time Audit Validation Flow Timeline Tracker */}
+          <div className="border border-[#E5E7EB] rounded-lg p-6 bg-[#F9FAFB] h-fit space-y-6 shadow-sm text-xs font-semibold">
+            <div className="text-xs font-bold text-[#0A1628] uppercase tracking-wider border-b border-[#E5E7EB] pb-3">
+              approval lifecycle pipeline
+            </div>
             
-            {/* Upper Lifecycle Tracker */}
-            <div className="border border-[#E5E7EB] rounded-xl p-6 bg-white shadow-sm text-xs font-semibold space-y-6">
-              <div className="text-xs font-bold text-[#0A1628] uppercase tracking-wider border-b border-[#E5E7EB] pb-3">
-                approval lifecycle pipeline
-              </div>
-              <div className="space-y-6 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E5E7EB]">
-                {approvalTimelineMatrix.map((step, idx) => (
-                  <div key={idx} className="flex gap-4 relative animate-fadeIn">
-                    <div className="mt-0.5 z-10 shrink-0 bg-white">
-                      {step.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-[#16A34A] fill-white stroke-[2.5]" />}
-                      {step.status === 'active' && <Clock className="w-5 h-5 text-[#EAB308] fill-white stroke-[2.5]" />}
-                      {step.status === 'failed' && <XCircle className="w-5 h-5 text-[#991B1B] fill-white stroke-[2.5]" />}
-                      {step.status === 'upcoming' && <Circle className="w-5 h-5 text-[#D1D5DB] fill-white stroke-[2]" />}
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className={`text-xs font-bold lowercase ${
-                        step.status === 'completed' ? 'text-[#0A1628]' :
-                        step.status === 'active' ? 'text-[#EAB308]' :
-                        step.status === 'failed' ? 'text-[#991B1B]' : 'text-[#9CA3AF]'
-                      }`}>{step.label}</span>
-                      <span className="text-[11px] text-[#6B7280] font-medium capitalize">{step.actor}</span>
-                      <span className="text-[10px] text-[#9CA3AF] font-mono lowercase">{step.date}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 💬 THE INTERACTIVE CLARIFICATION CHAT PANEL MODULE */}
-            <div className="border border-[#E5E7EB] rounded-xl bg-white shadow-sm flex flex-col h-[380px] overflow-hidden text-xs font-semibold">
-              <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 select-none">
-                <MessageSquare className="w-4 h-4 text-[#0747A1]" />
-                <div className="flex flex-col">
-                  <span className="font-black text-gray-900 tracking-tight lowercase">finance coordination thread</span>
-                  <span className="text-[10px] text-gray-400 font-medium lowercase">respond directly to processing queries</span>
-                </div>
-              </div>
-
-              {/* Chat Message Logs Container */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]/50 font-sans font-medium text-gray-700">
-                {chatMessages.map((msg) => {
-                  const isSystem = msg.sender === 'system';
-                  const isCurrentUser = msg.sender === 'requester';
+            <div className="space-y-6 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E5E7EB]">
+              {approvalTimelineMatrix.map((step, idx) => (
+                <div key={idx} className="flex gap-4 relative animate-fadeIn">
                   
-                  if (isSystem) {
-                    return (
-                      <div key={msg.id} className="text-center py-1 text-[10px] font-mono text-gray-400 lowercase italic bg-gray-100 rounded border border-gray-200/60 max-w-xs mx-auto">
-                        {msg.text}
-                      </div>
-                    );
-                  }
+                  {/* Visual Circle Icon Stepper Nodes */}
+                  <div className="mt-0.5 z-10 shrink-0 bg-[#F9FAFB]">
+                    {step.status === 'completed' && (
+                      <CheckCircle2 className="w-5 h-5 text-[#16A34A] fill-white stroke-[2.5]" />
+                    )}
+                    {step.status === 'active' && (
+                      <Clock className="w-5 h-5 text-[#EAB308] fill-white stroke-[2.5] animate-spin-slow" />
+                    )}
+                    {step.status === 'failed' && (
+                      <XCircle className="w-5 h-5 text-[#991B1B] fill-white stroke-[2.5]" />
+                    )}
+                    {step.status === 'upcoming' && (
+                      <Circle className="w-5 h-5 text-[#D1D5DB] fill-white stroke-[2]" />
+                    )}
+                  </div>
 
-                  return (
-                    <div key={msg.id} className={`flex flex-col max-w-[85%] space-y-0.5 ${isCurrentUser ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
-                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{msg.sender}</span>
-                      <div className={`p-3 rounded-xl text-xs leading-relaxed font-sans shadow-sm ${
-                        isCurrentUser 
-                          ? 'bg-[#0747A1] text-white rounded-tr-none font-medium' 
-                          : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none font-medium'
-                      }`}>
-                        {msg.text}
-                      </div>
-                      <span className="text-[8px] font-mono text-gray-400 tracking-tight lowercase">{msg.time}</span>
-                    </div>
-                  );
-                })}
-              </div>
+                  {/* Content Texts Descriptor Stack for the Approval Milestones */}
+                  <div className="flex flex-col gap-0.5">
+                    <span className={`text-xs font-bold lowercase ${
+                      step.status === 'completed' ? 'text-[#0A1628]' :
+                      step.status === 'active' ? 'text-[#EAB308]' :
+                      step.status === 'failed' ? 'text-[#991B1B]' : 'text-[#9CA3AF]'
+                    }`}>
+                      {step.label}
+                    </span>
+                    <span className="text-[11px] text-[#6B7280] font-medium capitalize">
+                      {step.actor}
+                    </span>
+                    <span className="text-[10px] text-[#9CA3AF] font-mono lowercase">
+                      {step.date}
+                    </span>
+                  </div>
 
-              {/* Message Input Box Form */}
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-100 bg-white flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="type your explanation statement here..."
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:border-[#0747A1] bg-gray-50 font-sans"
-                />
-                <button 
-                  type="submit" 
-                  className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer hover:opacity-90 transition-opacity shrink-0"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </form>
-
+                </div>
+              ))}
             </div>
-
           </div>
 
         </div>
