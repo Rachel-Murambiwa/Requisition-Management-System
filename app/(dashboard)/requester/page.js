@@ -13,7 +13,7 @@ import {
   ArrowUpRight, 
   Loader2,
   LogOut,
-  MessageSquare // 🛠️ IMPORTED: Added for clean comment log visualization
+  MessageSquare
 } from 'lucide-react';
 
 export default function RequesterDashboard() {
@@ -157,7 +157,6 @@ export default function RequesterDashboard() {
                                 <span className="font-bold text-[#0A1628] text-sm lowercase truncate">{req.justification || req.description || 'unspecified asset purchase'}</span>
                                 <span className="text-[10px] text-gray-400 mt-0.5 font-mono">ID: {req.id.substring(0, 8).toUpperCase()} • channel: {req.payment_method}</span>
                                 
-                                {/* 📌 NEW: Dynamic execution overlay maps operations feedback inline safely */}
                                 {currentStatus === 'rejected' && req.rejection_comment && (
                                   <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 flex items-center gap-1.5 lowercase max-w-fit animate-fadeIn">
                                     <MessageSquare className="w-3.5 h-3.5 shrink-0 text-red-500" /> 
@@ -182,7 +181,8 @@ export default function RequesterDashboard() {
                             </td>
                             <td className="px-5 py-4 text-right">
                               <button 
-                                onClick={() => router.push(`/requester/requisitions/${req.id}`)}
+                                // ✨ FIXED: Pushes cleanly to your brand new workspace subdirectory review page route format structure
+                                onClick={() => router.push(`/requester/review/${req.id}`)}
                                 className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded transition-colors cursor-pointer"
                               >
                                 <ArrowUpRight className="w-3.5 h-3.5" />
