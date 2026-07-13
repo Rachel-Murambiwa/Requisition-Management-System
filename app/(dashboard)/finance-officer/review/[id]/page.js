@@ -29,7 +29,7 @@ export default function FinanceOfficerReviewPage({ params }) {
 
   const [supabase] = useState(() => createClient());
   const [requisition, setRequisition] = useState(null);
-  const [attachments, setAttachments] = useState([]); // Added to safely track real files split from schema
+  const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -41,8 +41,6 @@ export default function FinanceOfficerReviewPage({ params }) {
     async function fetchRequisitionRecord() {
       try {
         setLoading(true);
-        
-        // 1. Fetch Core Requisition Details
         const { data, error: fetchError } = await supabase
           .from('requisitions')
           .select('*')
@@ -52,7 +50,6 @@ export default function FinanceOfficerReviewPage({ params }) {
         if (fetchError) throw fetchError;
         setRequisition(data);
 
-        // 2. Fetch Extracted Relational Attachments Safely
         try {
           const { data: attachData } = await supabase
             .from('attachments')
@@ -65,8 +62,6 @@ export default function FinanceOfficerReviewPage({ params }) {
 
       } catch (err) {
         console.error("Database lookup failure:", err.message);
-        
-        // 🛠️ AUTOMATED SANDBOX HYDRO-LOGS
         setRequisition({
           id: requisitionId || '7B9A2C41',
           requester: 'rachel murambiwa',
@@ -89,7 +84,6 @@ export default function FinanceOfficerReviewPage({ params }) {
       }
     }
 
-    // 3. Realtime Chat Stream Sync Configuration
     async function setupChatStream() {
       if (!requisitionId) return;
 
@@ -102,7 +96,6 @@ export default function FinanceOfficerReviewPage({ params }) {
       if (initialComments && initialComments.length > 0) {
         setChatMessages(initialComments);
       } else {
-        // Fallback System Header Message if no comments exist yet
         setChatMessages([
           { id: 'sys-init', sender: 'system', text: 'clarification channel opened for transaction audit thread.', created_at: new Date() }
         ]);
@@ -141,7 +134,21 @@ export default function FinanceOfficerReviewPage({ params }) {
     const textToSend = newMessage.toLowerCase().trim();
     setNewMessage('');
 
-    // Persist real message to your Supabase table
+    // ✨ OPTIMISTIC UPDATE: Render instantly on your screen so it can't disappear!
+    const optimisticMessage = {
+      id: `opt-${Date.now()}`,
+      requisition_id: requisitionId,
+      sender: "finance desk",
+      text: textToSend,
+      created_at: new Date().toISOString()
+    };
+    
+    setChatMessages((prev) => {
+      const filtered = prev.filter(m => m.id !== 'sys-init');
+      return [...filtered, optimisticMessage];
+    });
+
+    // Save to database background task
     const { error: insertError } = await supabase
       .from('requisition_comments')
       .insert([
@@ -154,6 +161,8 @@ export default function FinanceOfficerReviewPage({ params }) {
 
     if (insertError) {
       console.error("Failed to commit comment transmission:", insertError.message);
+      // Remove optimistic token if database completely rejected it
+      setChatMessages((prev) => prev.filter(m => m.id !== optimisticMessage.id));
     }
   };
 
@@ -177,8 +186,6 @@ export default function FinanceOfficerReviewPage({ params }) {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
-      
-      {/* Light Mode Sync Header Frame */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50 mb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -190,18 +197,14 @@ export default function FinanceOfficerReviewPage({ params }) {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         <div 
           onClick={() => router.push('/finance-officer')}
-          className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-bold transition-colors cursor-pointer mb-8 select-none lowercase"
+          className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-bold cursor-pointer mb-8 select-none lowercase"
         >
           <ArrowLeft className="w-4 h-4" /> back to review pool
         </div>
 
-        {/* Triple Column Responsive Layout Grid split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* LEFT PANEL: Comprehensive Document Overviews (Weight 7) */}
           <div className="lg:col-span-7 bg-white border border-[#E5E7EB] rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -210,9 +213,7 @@ export default function FinanceOfficerReviewPage({ params }) {
                   currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' : 
                   currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
                   'bg-amber-50 text-amber-700 border border-amber-100'
-                }`}>
-                  {currentStatus}
-                </span>
+                }`}>{currentStatus}</span>
               </div>
               <h1 className="text-3xl font-black text-[#0A1628] tracking-tight lowercase">file extraction parameters</h1>
             </div>
@@ -236,7 +237,6 @@ export default function FinanceOfficerReviewPage({ params }) {
               </div>
             </div>
 
-            {/* Content Logic Splits: Standard vs Travel */}
             {!isTravelRequest ? (
               <div className="space-y-5 text-xs font-bold text-gray-500">
                 <div className="space-y-1.5">
@@ -244,7 +244,6 @@ export default function FinanceOfficerReviewPage({ params }) {
                   <div className="p-4 bg-gray-50 border border-[#E5E7EB] rounded-lg text-sm text-gray-700 leading-relaxed font-sans font-medium">{requisition.justification}</div>
                 </div>
 
-                {/* Combines both legacy array documents and new subtable formats safely */}
                 {((attachments.length > 0 ? attachments : requisition.documents) || []).length > 0 && (
                   <div className="space-y-2">
                     <div className="text-[10px] uppercase tracking-wider text-gray-400">compliance certificate attachments</div>
@@ -288,10 +287,7 @@ export default function FinanceOfficerReviewPage({ params }) {
             )}
           </div>
 
-          {/* RIGHT SIDEBAR PANEL MATRIX (Weight 5) */}
           <div className="lg:col-span-5 space-y-6">
-            
-            {/* Upper Stage Validation Pipeline Tracker */}
             <div className="border border-[#E5E7EB] rounded-xl p-5 bg-white shadow-sm space-y-4 text-xs font-semibold">
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-2">approval verification tree</div>
               <div className="space-y-4 relative before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gray-100">
@@ -312,7 +308,6 @@ export default function FinanceOfficerReviewPage({ params }) {
               </div>
             </div>
 
-            {/* 💬 THE INTERACTIVE CLARIFICATION CHAT PANEL MODULE */}
             <div className="border border-[#E5E7EB] rounded-xl bg-white shadow-sm flex flex-col h-[380px] overflow-hidden text-xs font-semibold">
               <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 select-none">
                 <MessageSquare className="w-4 h-4 text-[#0747A1]" />
@@ -322,7 +317,6 @@ export default function FinanceOfficerReviewPage({ params }) {
                 </div>
               </div>
 
-              {/* Chat Message Logs Container */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]/50 font-sans font-medium text-gray-700">
                 {chatMessages.map((msg) => {
                   const isSystem = msg.sender === 'system';
@@ -340,18 +334,13 @@ export default function FinanceOfficerReviewPage({ params }) {
                     <div key={msg.id} className={`flex flex-col max-w-[85%] space-y-0.5 ${isFinanceDesk ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{msg.sender}</span>
                       <div className={`p-3 rounded-xl text-xs leading-relaxed font-sans shadow-sm ${
-                        isFinanceDesk 
-                          ? 'bg-[#0747A1] text-white rounded-tr-none font-medium' 
-                          : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none font-medium'
-                      }`}>
-                        {msg.text}
-                      </div>
+                        isFinanceDesk ? 'bg-[#0747A1] text-white rounded-tr-none font-medium' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none font-medium'
+                      }`}>{msg.text}</div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Message Input Trigger Box Form */}
               <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-100 bg-white flex items-center gap-2">
                 <input
                   type="text"
@@ -360,18 +349,12 @@ export default function FinanceOfficerReviewPage({ params }) {
                   placeholder="ask for a budget clarification or attachment amendment..."
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:border-[#0747A1] bg-gray-50 font-sans"
                 />
-                <button 
-                  type="submit" 
-                  className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer hover:opacity-90 transition-opacity shrink-0"
-                >
+                <button type="submit" className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer hover:opacity-90 transition-opacity shrink-0">
                   <Send className="w-3.5 h-3.5" />
                 </button>
               </form>
-
             </div>
-
           </div>
-
         </div>
       </div>
     </div>
