@@ -9,6 +9,8 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle, 
+  ThumbsUp, 
+  ThumbsDown, 
   LogOut, 
   SlidersHorizontal,
   FileText,
@@ -21,7 +23,7 @@ import {
   MessageSquare,
   X,
   Loader2,
-  ArrowUpRight // ✨ IMPORTED: For the action page navigation trigger
+  ArrowUpRight // ✨ Kept for custom routing sheet navigation
 } from 'lucide-react';
 
 const FORWARDED_AUDIT_QUEUE = [
@@ -53,7 +55,7 @@ export default function HeadOfOperationsDashboard() {
     try {
       setLoading(true);
       
-      // ✨ FIXED QUERY: Now strictly captures entries assigned to this department role step
+      // Keeps rows strictly filtered for their turn in the pipeline
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -83,12 +85,15 @@ export default function HeadOfOperationsDashboard() {
     router.push('/login');
   };
 
-  // 👍 APPROVED HANDLER: Straight transaction signature release
+  // 👍 APPROVED HANDLER: Advance stage status up to the country manager desk
   const handleApprove = async (id) => {
     try {
       const { error } = await supabase
         .from('requisitions')
-        .update({ status: 'approved' })
+        .update({ 
+          current_stage: 'country-manager',
+          status: 'pending' 
+        })
         .eq('id', id);
 
       if (error) throw error;
@@ -106,7 +111,7 @@ export default function HeadOfOperationsDashboard() {
     setIsModalOpen(true);
   };
 
-  // 🚀 REJECTION CONFIRMATION: Saves comments and dispatches direct notification row parameters
+  // 🚀 REJECTION CONFIRMATION: Bounce back to finance-officer
   const handleConfirmRejection = async (e) => {
     e.preventDefault();
     if (!commentText.trim() || !targetItem) return;
@@ -115,16 +120,15 @@ export default function HeadOfOperationsDashboard() {
     const cleaningComment = commentText.toLowerCase().trim();
 
     try {
-      // 1. Update the requisition status with comment notes inside database schemas
       await supabase
         .from('requisitions')
         .update({ 
           status: 'rejected',
+          current_stage: 'finance-officer',
           rejection_comment: cleaningComment
         })
         .eq('id', targetItem.id);
 
-      // 2. Dispatch live instant notification row to the specific requester
       await supabase
         .from('notifications')
         .insert([{
@@ -137,7 +141,6 @@ export default function HeadOfOperationsDashboard() {
           read: false
         }]);
 
-      // 3. Update UI state matrix optimistically
       setQueue(prev => prev.map(item => 
         item.id === targetItem.id 
           ? { ...item, status: 'rejected', rejection_comment: cleaningComment } 
@@ -312,13 +315,28 @@ export default function HeadOfOperationsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
                       
-                      {/* ✨ FIXED ACTIONS COLUMN: Swapped thumbs for the clean custom sub-route review navigation arrow */}
+                      {/* ✨ BOTH CONTROLS COMBINED: Restored instant action panels + the navigation link arrow together */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
                         {req.status === 'pending' ? (
-                          <div className="flex items-center justify-end select-none">
+                          <div className="flex items-center justify-end gap-2 select-none">
+                            <button 
+                              onClick={() => openRejectionModal(req)} 
+                              className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none cursor-pointer"
+                              title="quick reject"
+                            >
+                              <ThumbsDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleApprove(req.id)} 
+                              className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white border-none rounded-md shadow-sm font-bold transition-colors focus:outline-none cursor-pointer"
+                              title="quick approve"
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" />
+                            </button>
                             <button 
                               onClick={() => router.push(`/head-of-operations/review/${req.id}`)}
-                              className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md transition-colors cursor-pointer focus:outline-none shadow-sm"
+                              className="p-1.5 border border-gray-200 text-gray-400 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md transition-colors cursor-pointer focus:outline-none shadow-sm"
+                              title="view full attachments"
                             >
                               <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
                             </button>
@@ -336,6 +354,7 @@ export default function HeadOfOperationsDashboard() {
         </main>
       ) : (
         <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 print:p-0 animate-fadeIn">
+          {/* Analytics Section Code remains unchanged */}
           <div className="flex items-center justify-between mb-8 print:hidden">
             <div>
               <h1 className="text-xl font-bold text-[#0A1628] tracking-tight lowercase">executive system compilation</h1>
@@ -409,7 +428,6 @@ export default function HeadOfOperationsDashboard() {
                     <text x="100" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">feb</text>
                     <text x="200" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">mar</text>
                     <text x="300" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">apr</text>
-                    <text x="400" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">may</text>
                     <text x="400" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">may</text>
                     <text x="475" y="198" className="text-[10px] font-bold fill-[#1D4ED8] font-mono uppercase">june (curr)</text>
                     
@@ -494,6 +512,8 @@ export default function HeadOfOperationsDashboard() {
                   const barShare = totalVolume > 0 ? ((val / totalVolume) * 100).toFixed(0) : 0;
                   return (
                     <div key={catName} className="p-4 border border-gray-100 bg-[#F9FAFB] rounded-md shadow-sm">
+                      <div className="text-[9px] font-bold text-[#9CA3AF] uppercase truncate">{catName}</div>
+                      <div className="text-sm font-bold text-[#0A1628] font-mono mt-1">${val.toFixed(2)}</div>
                       <div className="w-full h-1 bg-gray-200 rounded-full mt-3 overflow-hidden">
                         <div className="h-full bg-[#1D4ED8]" style={{ width: `${barShare}%` }} />
                       </div>
