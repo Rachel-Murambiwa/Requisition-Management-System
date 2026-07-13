@@ -9,8 +9,6 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle, 
-  ThumbsUp, 
-  ThumbsDown, 
   LogOut, 
   SlidersHorizontal,
   FileText,
@@ -22,7 +20,8 @@ import {
   MapPin,
   MessageSquare,
   X,
-  Loader2
+  Loader2,
+  ArrowUpRight // ✨ IMPORTED: For the action page navigation trigger
 } from 'lucide-react';
 
 const FORWARDED_AUDIT_QUEUE = [
@@ -53,9 +52,12 @@ export default function HeadOfOperationsDashboard() {
   async function syncOperationsQueue() {
     try {
       setLoading(true);
+      
+      // ✨ FIXED QUERY: Now strictly captures entries assigned to this department role step
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
+        .eq('current_stage', 'head-of-operations')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -301,7 +303,6 @@ export default function HeadOfOperationsDashboard() {
                         <div className="flex flex-col">
                           <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description || req.justification}</span>
                           <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#9CA3AF] mt-0.5">{req.category}</span>
-                          {/* 📌 Display reason inline beneath item if it was rejected */}
                           {req.status === 'rejected' && req.rejection_comment && (
                             <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 inline-block lowercase flex items-center gap-1">
                               <MessageSquare className="w-3 h-3 shrink-0" /> reason: {req.rejection_comment}
@@ -310,12 +311,17 @@ export default function HeadOfOperationsDashboard() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
+                      
+                      {/* ✨ FIXED ACTIONS COLUMN: Swapped thumbs for the clean custom sub-route review navigation arrow */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
                         {req.status === 'pending' ? (
-                          <div className="flex items-center justify-end gap-2 select-none">
-                            {/* 🛠️ MODIFIED ACTION TRIGGER: Passes element to modal frame state instead of auto-firing status */}
-                            <button onClick={() => openRejectionModal(req)} className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none cursor-pointer"><ThumbsDown className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => handleApprove(req.id)} className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white border-none rounded-md shadow-sm font-bold transition-colors focus:outline-none cursor-pointer"><ThumbsUp className="w-3.5 h-3.5" /></button>
+                          <div className="flex items-center justify-end select-none">
+                            <button 
+                              onClick={() => router.push(`/head-of-operations/review/${req.id}`)}
+                              className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md transition-colors cursor-pointer focus:outline-none shadow-sm"
+                            >
+                              <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </button>
                           </div>
                         ) : (
                           <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md ${req.status === 'approved' ? 'text-[#16A34A] bg-green-50 border border-green-100' : 'text-[#991B1B] bg-red-50 border border-red-100'}`}>{req.status === 'approved' ? 'authorized signature' : 'rejected audit'}</span>
@@ -404,6 +410,7 @@ export default function HeadOfOperationsDashboard() {
                     <text x="200" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">mar</text>
                     <text x="300" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">apr</text>
                     <text x="400" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">may</text>
+                    <text x="400" y="198" className="text-[10px] font-bold fill-gray-400 font-mono uppercase">may</text>
                     <text x="475" y="198" className="text-[10px] font-bold fill-[#1D4ED8] font-mono uppercase">june (curr)</text>
                     
                     <text x="430" y="45" className="text-[11px] font-black fill-[#1D4ED8] font-mono font-bold">$8,595.00</text>
@@ -487,8 +494,6 @@ export default function HeadOfOperationsDashboard() {
                   const barShare = totalVolume > 0 ? ((val / totalVolume) * 100).toFixed(0) : 0;
                   return (
                     <div key={catName} className="p-4 border border-gray-100 bg-[#F9FAFB] rounded-md shadow-sm">
-                      <div className="text-[9px] font-bold text-[#9CA3AF] uppercase truncate">{catName}</div>
-                      <div className="text-sm font-bold text-[#0A1628] font-mono mt-1">${val.toFixed(2)}</div>
                       <div className="w-full h-1 bg-gray-200 rounded-full mt-3 overflow-hidden">
                         <div className="h-full bg-[#1D4ED8]" style={{ width: `${barShare}%` }} />
                       </div>
@@ -513,7 +518,7 @@ export default function HeadOfOperationsDashboard() {
         </main>
       )}
 
-      {/* 🛠️ NEW COMPONENT: LIGHT-MODE REJECTION COMMENT MODAL DIALOG */}
+      {/* Rejection Justification Modal */}
       {isModalOpen && targetItem && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0A1628]/40 backdrop-blur-sm p-4 animate-fadeIn">
           <div className="w-full max-w-md bg-white border border-[#E5E7EB] rounded-xl shadow-2xl p-6 relative flex flex-col space-y-4">
