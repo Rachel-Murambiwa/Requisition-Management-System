@@ -18,32 +18,53 @@ export async function POST(request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const origin = request.headers.get('origin') || 'http://localhost:3000';
 
-    // 🚀 FIXED: Swapped out silent provisioning for a live SMTP mail invitation dispatch link
+    // 🚀 STEP 1: Try sending the actual email invite
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       cleanEmail,
       {
-        // Passes the user details along as metadata inside the sign-up payload stream
         data: {
           name: name.toLowerCase().trim(),
           role: role,
           hub_name: hub_name
         },
-        // 🔄 OPTIONAL: Redirects them straight back to your workspace login screen once they click the email link
-        redirectTo: `${request.headers.get('origin') || 'http://localhost:3000'}/login`
+        redirectTo: `${origin}/login`
       }
     );
 
+    // 🛡️ STEP 2: If ANY error happens (rate limit, SMTP config down, etc.), catch it immediately
     if (error) {
-      // 🛡️ INTELLIGENT ERROR INTERCEPTION
-      // If Supabase tells us they are already registered, return a clean 400 instead of a scary 500 crash log
+      // Handle the case where they are already registered so we don't duplicate them
       if (error.message.includes('already registered') || error.status === 422) {
         return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
       }
-      throw error;
+      
+      // For ANY other email/SMTP error, trigger the sandbox auto-confirm fallback immediately
+      console.warn("SMTP failure detected. Triggering universal sandbox fallback account provisioning:", error.message);
+      
+      const { data: fallbackUser, error: fallbackError } = await supabaseAdmin.auth.admin.createUser({
+        email: cleanEmail,
+        password: 'TemporaryPassword123!', 
+        email_confirm: true,
+        user_metadata: { 
+          name: name.toLowerCase().trim(), 
+          role: role, 
+          hub_name: hub_name 
+        }
+      });
+
+      if (fallbackError) throw fallbackError;
+
+      return NextResponse.json({ 
+        success: true, 
+        user: fallbackUser.user,
+        isFallbackMode: true,
+        temporaryPassword: 'TemporaryPassword123!'
+      });
     }
 
-    return NextResponse.json({ success: true, user: data.user });
+    return NextResponse.json({ success: true, user: data.user, isFallbackMode: false });
 
   } catch (err) {
     console.error("Invite API Crash:", err.message);
