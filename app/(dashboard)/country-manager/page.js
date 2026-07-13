@@ -16,7 +16,9 @@ import {
   CheckCircle2,
   History,
   Layers,
-  Calendar
+  Calendar,
+  ChevronDown, // ✨ Added for accordion drop down transitions
+  ChevronUp
 } from 'lucide-react';
 
 export default function CountryManagerDashboard() {
@@ -28,6 +30,17 @@ export default function CountryManagerDashboard() {
   const [manifestScope, setManifestScope] = useState("current"); // 'current' or 'history'
   const [disbursalStatus, setDisbursalStatus] = useState("idle"); 
   const [selectedChannel, setSelectedChannel] = useState("ecocash corporate wallet");
+
+  // ✨ NEW STATE: Tracks which historic month accordions are currently clicked open
+  const [openMonths, setOpenMonths] = useState({});
+
+  // Toggle helper for the dropdown rows
+  const toggleMonthAccordion = (periodKey) => {
+    setOpenMonths(prev => ({
+      ...prev,
+      [periodKey]: !prev[periodKey]
+    }));
+  };
 
   // Fetch both active approved items and historical disbursed entries
   useEffect(() => {
@@ -82,7 +95,6 @@ export default function CountryManagerDashboard() {
 
   const grandTotal = Object.values(regionalTotals).reduce((a, b) => a + b, 0);
 
-  // Helper calculation engine specifically tracking live active items for the chart card
   const activeGrandTotal = items
     .filter(i => i.status === 'approved')
     .reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
@@ -93,7 +105,6 @@ export default function CountryManagerDashboard() {
   }, {});
 
   // 🧠 CHRONOLOGICAL HISTORICAL AGGREGATION ENGINE
-  // Groups past records by "Month Year" strings derived from database timestamps
   const monthlyHistoryGroups = items
     .filter(item => item.status === 'disbursed')
     .reduce((acc, curr) => {
@@ -123,7 +134,6 @@ export default function CountryManagerDashboard() {
       return acc;
     }, []);
 
-  // Structural mapping engine used to loop through items for the current active list
   const currentActiveCategories = displayedItems.reduce((acc, curr) => {
     let catNode = acc.find(c => c.category === curr.category);
     if (!catNode) {
@@ -133,7 +143,7 @@ export default function CountryManagerDashboard() {
     let secNode = catNode.sections.find(s => s.title === curr.section);
     if (!secNode) {
       secNode = { title: curr.section, lines: [] };
-      catNode.sections.push(secNode);
+      acc.push(secNode);
     }
     secNode.lines.push(curr);
     return acc;
@@ -168,7 +178,6 @@ export default function CountryManagerDashboard() {
   return (
     <div className="min-h-screen bg-[#F3F4F6] text-[#111827] font-sans antialiased pb-16">
       
-      {/* Universal Executive Navigation Header */}
       <nav className="w-full bg-[#0A1628] text-white print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -229,7 +238,6 @@ export default function CountryManagerDashboard() {
         {viewMode === 'manifest' ? (
           <div className="space-y-4">
             
-            {/* 🕒 HISTORICAL PIPELINE SCOPE TOGGLE CONTROLS */}
             <div className="flex justify-start gap-2 bg-gray-200/60 p-1 rounded-lg max-w-md border border-gray-300 print:hidden">
               <button 
                 onClick={() => setManifestScope('current')}
@@ -325,8 +333,8 @@ export default function CountryManagerDashboard() {
                 )}
               </div>
 
-              {/* 📋 CHRONOLOGICAL MATRIX INTERFACE TABULATION */}
-              <div className="mt-8 space-y-12">
+              {/* 📋 RENDERING PIPELINE CONTAINER LAYER */}
+              <div className="mt-8">
                 {manifestScope === 'current' ? (
                   // STANDARD LIVE ACTIVE RENDERING
                   <table className="w-full text-left border-collapse border border-gray-200">
@@ -376,63 +384,85 @@ export default function CountryManagerDashboard() {
                     </tbody>
                   </table>
                 ) : (
-                  // DYNAMIC CHRONOLOGICAL MONTH BREAKDOWN RENDERING
-                  <div className="space-y-10">
+                  // ✨ NEW DYNAMIC CHRONOLOGICAL ACCORDION ENGINE
+                  <div className="space-y-3 font-sans">
                     {monthlyHistoryGroups.length > 0 ? (
-                      monthlyHistoryGroups.map((monthGroup, mIdx) => (
-                        <div key={mIdx} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-                          
-                          {/* Chronological Month Summary Header strip */}
-                          <div className="bg-[#0A1628] text-white px-4 py-3 flex items-center justify-between select-none">
-                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider">
-                              <Calendar className="w-4 h-4 text-[#0747A1]" />
-                              <span>{monthGroup.period} Audit Ledger</span>
+                      monthlyHistoryGroups.map((monthGroup, mIdx) => {
+                        const isOpened = !!openMonths[monthGroup.period];
+                        return (
+                          <div key={mIdx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white transition-all">
+                            
+                            {/* 🔔 Interactive Month Row Trigger Sheet Header */}
+                            <div 
+                              onClick={() => toggleMonthAccordion(monthGroup.period)}
+                              className="bg-gray-50 border-b border-gray-200 px-5 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 select-none"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Calendar className="w-4 h-4 text-[#0747A1]" />
+                                <span className="text-sm font-black text-[#0A1628] capitalize tracking-tight">
+                                  {monthGroup.period}
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-4 text-xs">
+                                <div className="font-mono font-bold text-gray-500 bg-gray-200/60 border rounded px-2.5 py-0.5">
+                                  Grand Total: <span className="text-[#0747A1] font-black">${monthGroup.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                {isOpened ? (
+                                  <ChevronUp className="w-4 h-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                                )}
+                              </div>
                             </div>
-                            <div className="text-xs font-mono font-bold">
-                              Released: <span className="text-[#FBBF24]">${monthGroup.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                          </div>
 
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="border-b border-gray-300 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-gray-50/70">
-                                <th className="py-2 px-3 w-5/12">description</th>
-                                <th className="py-2 px-3">class</th>
-                                <th className="py-2 px-3">location</th>
-                                <th className="py-2 px-3 text-center">qty</th>
-                                <th className="py-2 px-3 text-right">unit price</th>
-                                <th className="py-2 px-3 text-right">total</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-xs text-slate-700">
-                              {monthGroup.categories.map((cat, cIdx) => (
-                                <Fragment key={cIdx}>
-                                  <tr className="bg-slate-100 border-t border-b border-slate-200">
-                                    <td colSpan="6" className="py-1.5 px-3 font-bold text-slate-800 text-xs lowercase">{cat.category}</td>
-                                  </tr>
-                                  {cat.sections.map((sec, sIdx) => (
-                                    <Fragment key={sIdx}>
-                                      <tr className="bg-slate-50/50">
-                                        <td colSpan="6" className="py-1 px-3 font-bold text-slate-600 pl-4 border-b border-slate-100 lowercase">{sec.title}</td>
-                                      </tr>
-                                      {sec.lines.map((line, lIdx) => (
-                                        <tr key={lIdx} className="hover:bg-gray-50/30 border-b border-gray-100">
-                                          <td className="py-2.5 px-3 pl-6 text-gray-600 lowercase">{line.desc}</td>
-                                          <td className="py-2.5 px-3 text-gray-400 lowercase">{line.class}</td>
-                                          <td className="py-2.5 px-3 text-gray-500 font-medium lowercase">{line.location}</td>
-                                          <td className="py-2.5 px-3 text-center font-mono">{line.qty}</td>
-                                          <td className="py-2.5 px-3 text-right font-mono text-gray-400">${line.unitPrice.toFixed(2)}</td>
-                                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                            {/* 📜 SLIDEOUT INNER TRANSACTION LOG CONTAINER */}
+                            {isOpened && (
+                              <div className="p-4 bg-white animate-fadeIn overflow-x-auto">
+                                <table className="w-full text-left border-collapse border border-gray-100">
+                                  <thead>
+                                    <tr className="border-b border-gray-300 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-gray-50/70">
+                                      <th className="py-2 px-3 w-5/12">description</th>
+                                      <th className="py-2 px-3">class</th>
+                                      <th className="py-2 px-3">location</th>
+                                      <th className="py-2 px-3 text-center">qty</th>
+                                      <th className="py-2 px-3 text-right">unit price</th>
+                                      <th className="py-2 px-3 text-right">total</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="text-xs text-slate-700">
+                                    {monthGroup.categories.map((cat, cIdx) => (
+                                      <Fragment key={cIdx}>
+                                        <tr className="bg-slate-100/90 border-t border-b border-slate-200">
+                                          <td colSpan="6" className="py-1.5 px-3 font-bold text-slate-800 text-xs lowercase">{cat.category}</td>
                                         </tr>
-                                      ))}
-                                    </Fragment>
-                                  ))}
-                                </Fragment>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ))
+                                        {cat.sections.map((sec, sIdx) => (
+                                          <Fragment key={sIdx}>
+                                            <tr className="bg-slate-50/50">
+                                              <td colSpan="6" className="py-1 px-3 font-bold text-slate-600 pl-4 border-b border-slate-100 lowercase">{sec.title}</td>
+                                            </tr>
+                                            {sec.lines.map((line, lIdx) => (
+                                              <tr key={lIdx} className="hover:bg-gray-50/30 border-b border-gray-100">
+                                                <td className="py-2.5 px-3 pl-6 text-gray-600 lowercase">{line.desc}</td>
+                                                <td className="py-2.5 px-3 text-gray-400 lowercase">{line.class}</td>
+                                                <td className="py-2.5 px-3 text-gray-500 font-medium lowercase">{line.location}</td>
+                                                <td className="py-2.5 px-3 text-center font-mono">{line.qty}</td>
+                                                <td className="py-2.5 px-3 text-right font-mono text-gray-400">${line.unitPrice.toFixed(2)}</td>
+                                                <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                                              </tr>
+                                            ))}
+                                          </Fragment>
+                                        ))}
+                                      </Fragment>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                          </div>
+                        );
+                      })
                     ) : (
                       <div className="text-center py-16 bg-white border border-gray-200 border-dashed rounded-xl text-gray-400 select-none lowercase">
                         no historic distributed records found in database registry.
@@ -442,7 +472,7 @@ export default function CountryManagerDashboard() {
                 )}
               </div>
 
-              {/* ✍️ MOVED SIGNATURE AREA: Shifted into the invoice framework container */}
+              {/* ✍️ SIGNATURE RECOGNITION PLATFORM BLOCK */}
               <div className="pt-12 mt-8 border-t border-dashed border-gray-300 flex justify-between items-end text-xs text-gray-500">
                 <div className="leading-relaxed text-[11px]">autogenerated via uncommon rms audit systems module<br />internal use only • confidential programmatic financial ledger report</div>
                 <div className="text-center w-48 shrink-0">
@@ -454,6 +484,7 @@ export default function CountryManagerDashboard() {
             </div>
           </div>
         ) : (
+          // ANALYTICS PANEL FRAME ENGINE LAYER
           <div className="w-full bg-white border border-[#E5E7EB] rounded-lg shadow-sm p-8 sm:p-12 print:border-none print:shadow-none space-y-12 animate-slideDown">
             <div className="flex justify-between border-b border-gray-200 pb-6">
               <div>
@@ -492,7 +523,6 @@ export default function CountryManagerDashboard() {
                     <text x="420" y="25" className="text-xs font-black fill-[#0747A1] font-mono">${activeGrandTotal.toLocaleString()}</text>
                   </svg>
 
-                  {/* 📊 Small Month & Total Amount Breakdown Table inside chart card */}
                   <div className="pt-3 border-t border-gray-100">
                     <table className="w-full text-left border-collapse">
                       <thead>
@@ -553,7 +583,6 @@ export default function CountryManagerDashboard() {
               </div>
             </div>
 
-            {/* 📊 EXACT AMOUNTS DATA LEDGER TABLE */}
             <div className="pt-6 border-t border-gray-100 space-y-3">
               <h3 className="text-xs font-bold uppercase text-[#4B5563] flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-[#0747A1]" /> 
