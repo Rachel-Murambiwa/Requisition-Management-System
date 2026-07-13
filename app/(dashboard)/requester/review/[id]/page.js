@@ -14,9 +14,6 @@ import {
   Circle, 
   Clock, 
   XCircle,
-  Users,
-  Briefcase,
-  ExternalLink,
   Loader2,
   Send,
   MessageSquare
@@ -25,7 +22,6 @@ import {
 export default function SafeRequesterReviewPage({ params: paramsPromise }) {
   const router = useRouter();
   
-  // 🛡️ Bulletproof Route Parameter Unwrapping
   let requisitionId = null;
   try {
     const resolvedParams = paramsPromise ? use(paramsPromise) : null;
@@ -37,24 +33,15 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
   const [supabase] = useState(() => createClient());
   const [requisition, setRequisition] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // 💬 Interactive Mock Chat State
-  const [chatMessages, setChatMessages] = useState([
-    { id: 1, sender: "system", text: "clarification channel opened for transaction audit thread.", time: "system log" },
-    { id: 2, sender: "finance desk", text: "rachel, the sub-total line on the powervale quote seems to omit the standard hub transport fee. could you cross-check if they included it in the final aggregate volume?", time: "jun 11, 10:45 am" }
-  ]);
+  const [chatMessages, setChatMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
 
-  // Live Database Fetch Hook
   useEffect(() => {
+    if (!requisitionId) return;
+
+    // 1. Fetch main requisition document slice
     async function fetchRequisitionRecord() {
-      if (!requisitionId) {
-        setLoading(false);
-        return;
-      }
       try {
-        setLoading(true);
         const { data, error: fetchError } = await supabase
           .from('requisitions')
           .select('*')
@@ -65,25 +52,62 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
         setRequisition(data);
       } catch (err) {
         console.error("Database tracking fault:", err.message);
-        setError(err.message);
       } finally {
         setLoading(false);
       }
     }
+
+    // 2. Load historical threads and bind real-time callback hooks
+    async function setupChatStream() {
+      const { data: initialComments } = await supabase
+        .from('requisition_comments')
+        .select('*')
+        .eq('requisition_id', requisitionId)
+        .order('created_at', { ascending: true });
+
+      if (initialComments) setChatMessages(initialComments);
+
+      const channel = supabase
+        .channel(`comments-req-${requisitionId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'requisition_comments', filter: `requisition_id=eq.${requisitionId}` },
+          (payload) => {
+            setChatMessages((prev) => {
+              if (prev.some(msg => msg.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+
     fetchRequisitionRecord();
+    setupChatStream();
   }, [requisitionId, supabase]);
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !requisitionId) return;
 
-    setChatMessages([...chatMessages, {
-      id: Date.now(),
-      sender: "requester",
-      text: newMessage.toLowerCase().trim(),
-      time: "just now"
-    }]);
+    const messageText = newMessage.trim();
     setNewMessage('');
+
+    const { error } = await supabase
+      .from('requisition_comments')
+      .insert([
+        {
+          requisition_id: requisitionId,
+          sender: 'requester',
+          text: messageText
+        }
+      ]);
+
+    if (error) console.error("Failed to commit commentary payload:", error.message);
   };
 
   if (loading) {
@@ -95,7 +119,6 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
     );
   }
 
-  // 🛡️ Safe rendering defaults if database lookup returns blank/null records during build step
   const activeRecord = requisition || {
     id: requisitionId || '7B9A2C41',
     requester: 'rachel murambiwa',
@@ -120,7 +143,6 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
-      
       <nav className="w-full bg-[#0A1628] text-white sticky top-0 z-50 mb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -132,7 +154,6 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         <div 
           onClick={() => router.push('/requester')}
           className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-semibold transition-colors cursor-pointer mb-8 select-none"
@@ -142,23 +163,16 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Left Block */}
           <div className="lg:col-span-7 bg-white border border-[#E5E7EB] rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
             <div>
               <div className="flex flex-wrap items-center gap-2.5 mb-3">
                 <span className="text-xs font-bold font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase tracking-wide">ID: {activeRecord.id.toString().substring(0, 8).toUpperCase()}</span>
                 <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
                   currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' : 
-                  currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
-                  'bg-amber-50 text-amber-700 border border-amber-100'
-                }`}>
-                  {currentStatus}
-                </span>
+                  currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                }`}>{currentStatus}</span>
               </div>
-              <h1 className="text-3xl font-black text-[#0A1628] tracking-tight lowercase">
-                allocation breakdown summary
-              </h1>
+              <h1 className="text-3xl font-black text-[#0A1628] tracking-tight lowercase">allocation breakdown summary</h1>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-[#E5E7EB] pt-6 text-xs font-semibold text-gray-500">
@@ -168,7 +182,7 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
               </div>
               <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg">
                 <div className="text-[10px] text-gray-400 uppercase tracking-wide">deployment regional location</div>
-                <div className="text-sm font-bold text-gray-900 mt-0.5 lowercase">{activeRecord.location || 'unspecified'}</div>
+                <div className="text-sm font-bold text-gray-900 mt-0.5 lowercase">{activeRecord.location || 'harare hub'}</div>
               </div>
               <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg">
                 <div className="text-[10px] text-gray-400 uppercase tracking-wide">budget category tracking</div>
@@ -190,13 +204,12 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
             )}
           </div>
 
-          {/* Right Sidebar Block */}
           <div className="lg:col-span-5 space-y-6">
             <div className="border border-[#E5E7EB] rounded-xl p-6 bg-white shadow-sm text-xs font-semibold space-y-5">
               <div className="text-xs font-bold text-[#0A1628] uppercase tracking-wider border-b border-[#E5E7EB] pb-2">approval lifecycle tree</div>
               <div className="space-y-5 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E5E7EB]">
                 {approvalTimelineMatrix.map((step, idx) => (
-                  <div key={idx} className="flex gap-4 relative">
+                  <div key={idx} className="flex gap-4 relative animate-fadeIn">
                     <div className="mt-0.5 z-10 shrink-0 bg-white">
                       {step.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-[#16A34A] fill-white stroke-[2.5]" />}
                       {step.status === 'active' && <Clock className="w-5 h-5 text-[#EAB308] fill-white stroke-[2.5]" />}
@@ -223,14 +236,13 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
 
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]/50 font-sans font-medium text-gray-700">
                 {chatMessages.map((msg) => {
-                  const isSystem = msg.sender === 'system';
                   const isCurrentUser = msg.sender === 'requester';
-                  return isSystem ? (
-                    <div key={msg.id} className="text-center py-1 text-[10px] font-mono text-gray-400 lowercase italic bg-gray-100 rounded border border-gray-200/60 max-w-xs mx-auto">{msg.text}</div>
-                  ) : (
+                  return (
                     <div key={msg.id} className={`flex flex-col max-w-[85%] space-y-0.5 ${isCurrentUser ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{msg.sender}</span>
-                      <div className={`p-3 rounded-xl text-xs leading-relaxed font-sans shadow-sm ${isCurrentUser ? 'bg-[#0747A1] text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'}`}>{msg.text}</div>
+                      <div className={`p-3 rounded-xl text-xs leading-relaxed font-sans shadow-sm ${
+                        isCurrentUser ? 'bg-[#0747A1] text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'
+                      }`}>{msg.text}</div>
                     </div>
                   );
                 })}
@@ -244,12 +256,12 @@ export default function SafeRequesterReviewPage({ params: paramsPromise }) {
                   placeholder="type your explanation statement here..."
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:border-[#0747A1] bg-gray-50 font-sans"
                 />
-                <button type="submit" className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer"><Send className="w-3.5 h-3.5" /></button>
+                <button type="submit" className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer">
+                  <Send className="w-3.5 h-3.5" />
+                </button>
               </form>
             </div>
-
           </div>
-
         </div>
       </div>
     </div>

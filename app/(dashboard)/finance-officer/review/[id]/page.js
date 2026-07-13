@@ -19,11 +19,9 @@ import {
   Send,
   MessageSquare,
   Users,
-  MapPin,
   Briefcase
 } from 'lucide-react';
 
-// 🛠️ FIXED: Destructured synchronous params directly matching Next.js 14 layout rules
 export default function FinanceOfficerReviewPage({ params }) {
   const router = useRouter();
   const requisitionId = params?.id;
@@ -31,19 +29,15 @@ export default function FinanceOfficerReviewPage({ params }) {
   const [supabase] = useState(() => createClient());
   const [requisition, setRequisition] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // 💬 Interactive Clarification Chat States
-  const [chatMessages, setChatMessages] = useState([
-    { id: 1, sender: "system", text: "clarification channel opened for transaction audit thread.", time: "system log" },
-    { id: 2, sender: "finance desk", text: "rachel, the sub-total line on the powervale quote seems to omit the standard hub transport fee. could you cross-check if they included it in the final aggregate volume?", time: "jun 11, 10:45 am" }
-  ]);
+  const [chatMessages, setChatMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
 
   useEffect(() => {
+    if (!requisitionId) return;
+
+    // 1. Fetch the main requisition details
     async function fetchRequisitionRecord() {
       try {
-        setLoading(true);
         const { data, error: fetchError } = await supabase
           .from('requisitions')
           .select('*')
@@ -54,43 +48,75 @@ export default function FinanceOfficerReviewPage({ params }) {
         setRequisition(data);
       } catch (err) {
         console.error("Database lookup failure:", err.message);
-        
-        // 🛠️ AUTOMATED SANDBOX HYDRO-LOGS: If DB is empty or fails, populates data matching your image layout
+        // Automated Sandbox Fallback Mode if row is missing
         setRequisition({
-          id: requisitionId || '7B9A2C41',
+          id: requisitionId,
           requester: 'rachel murambiwa',
           location: 'harare hub',
           created_at: new Date().toISOString(),
           amount: 450.00,
           category: 'hub equipment & hardware',
           payment_method: 'ecocash corporate wallet',
-          justification: 'purchase of 3 replacement uninterruptible power supply (ups) batteries for the harare hub classroom workstations to sustain teaching capacity during grid load-shedding cycles.',
-          is_emergency: false,
+          justification: 'purchase of 3 replacement uninterruptible power supply (ups) batteries for the harare hub classroom workstations.',
           status: 'pending',
-          documents: [
-            { name: 'quotation_powervale.pdf', size: '142 kb', url: '#' },
-            { name: 'quotation_solargen.pdf', size: '198 kb', url: '#' },
-            { name: 'vat_cert_powervale.pdf', size: '89 kb', url: '#' }
-          ]
+          documents: []
         });
       } finally {
         setLoading(false);
       }
     }
-    if (requisitionId) fetchRequisitionRecord();
+
+    // 2. Fetch comments & set up real-time sync stream
+    async function setupChatStream() {
+      const { data: initialComments } = await supabase
+        .from('requisition_comments')
+        .select('*')
+        .eq('requisition_id', requisitionId)
+        .order('created_at', { ascending: true });
+
+      if (initialComments) setChatMessages(initialComments);
+
+      const channel = supabase
+        .channel(`comments-fo-${requisitionId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'requisition_comments', filter: `requisition_id=eq.${requisitionId}` },
+          (payload) => {
+            setChatMessages((prev) => {
+              if (prev.some(msg => msg.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+
+    fetchRequisitionRecord();
+    setupChatStream();
   }, [requisitionId, supabase]);
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !requisitionId) return;
 
-    setChatMessages([...chatMessages, {
-      id: Date.now(),
-      sender: "finance desk",
-      text: newMessage.toLowerCase().trim(),
-      time: "just now"
-    }]);
+    const messageText = newMessage.trim();
     setNewMessage('');
+
+    const { error } = await supabase
+      .from('requisition_comments')
+      .insert([
+        {
+          requisition_id: requisitionId,
+          sender: 'finance desk',
+          text: messageText
+        }
+      ]);
+
+    if (error) console.error("Failed to route comment payload:", error.message);
   };
 
   if (loading) {
@@ -113,8 +139,6 @@ export default function FinanceOfficerReviewPage({ params }) {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
-      
-      {/* Light Mode Sync Header Frame */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50 mb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -126,7 +150,6 @@ export default function FinanceOfficerReviewPage({ params }) {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         <div 
           onClick={() => router.push('/finance-officer')}
           className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-bold transition-colors cursor-pointer mb-8 select-none lowercase"
@@ -134,21 +157,15 @@ export default function FinanceOfficerReviewPage({ params }) {
           <ArrowLeft className="w-4 h-4" /> back to review pool
         </div>
 
-        {/* Triple Column Responsive Layout Grid split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* LEFT PANEL: Comprehensive Document Overviews (Weight 7) */}
           <div className="lg:col-span-7 bg-white border border-[#E5E7EB] rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-mono font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase">ID: {requisition.id}</span>
+                <span className="text-xs font-mono font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase">ID: {requisition?.id?.substring(0,8)}</span>
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                   currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' : 
-                  currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
-                  'bg-amber-50 text-amber-700 border border-amber-100'
-                }`}>
-                  {currentStatus}
-                </span>
+                  currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                }`}>{currentStatus}</span>
               </div>
               <h1 className="text-3xl font-black text-[#0A1628] tracking-tight lowercase">file extraction parameters</h1>
             </div>
@@ -156,78 +173,35 @@ export default function FinanceOfficerReviewPage({ params }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-gray-100 pt-5 text-xs font-bold text-gray-500">
               <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg">
                 <div className="text-[9px] text-gray-400 uppercase tracking-wide">issuing staff operator</div>
-                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition.requester}</div>
+                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition?.requester}</div>
               </div>
               <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg">
                 <div className="text-[9px] text-gray-400 uppercase tracking-wide">regional deploy hub</div>
-                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition.location}</div>
+                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition?.location || 'harare hub'}</div>
               </div>
               <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg">
                 <div className="text-[9px] text-gray-400 uppercase tracking-wide">procurement group track</div>
-                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition.category}</div>
+                <div className="text-sm font-black text-gray-900 mt-0.5 lowercase">{requisition?.category}</div>
               </div>
               <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
                 <div className="text-[9px] text-[#0747A1] uppercase tracking-wide">requested capital size</div>
-                <div className="text-base font-black text-gray-900 mt-0.5">${parseFloat(requisition.amount).toFixed(2)}</div>
+                <div className="text-base font-black text-gray-900 mt-0.5">${parseFloat(requisition?.amount || 0).toFixed(2)}</div>
               </div>
             </div>
 
-            {/* Content Logic Splits: Standard vs Travel */}
             {!isTravelRequest ? (
               <div className="space-y-5 text-xs font-bold text-gray-500">
                 <div className="space-y-1.5">
                   <div className="text-[10px] uppercase tracking-wider text-gray-400 flex items-center gap-1"><FileText className="w-3.5 h-3.5" /> submission justification logs</div>
-                  <div className="p-4 bg-gray-50 border border-[#E5E7EB] rounded-lg text-sm text-gray-700 leading-relaxed font-sans font-medium">{requisition.justification}</div>
+                  <div className="p-4 bg-gray-50 border border-[#E5E7EB] rounded-lg text-sm text-gray-700 leading-relaxed font-sans font-medium">{requisition?.justification}</div>
                 </div>
-
-                {requisition.documents && requisition.documents.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-wider text-gray-400">compliance certificate attachments</div>
-                    <div className="space-y-1.5">
-                      {requisition.documents.map((file, i) => (
-                        <a key={i} href={file.url} target="_blank" rel="noreferrer" className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-white shadow-sm hover:border-[#0747A1] transition-all no-underline text-inherit group">
-                          <span className="text-xs font-bold text-[#0747A1] group-hover:underline flex items-center gap-2 truncate lowercase">
-                            <ExternalLink className="w-3.5 h-3.5 text-gray-400" /> {file.name}
-                          </span>
-                          <span className="text-[10px] font-mono text-gray-400 shrink-0">{file.size || 'pdf payload'}</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
-              <div className="space-y-6 pt-2 border-t border-dashed border-gray-200 text-xs font-semibold text-gray-500 animate-fadeIn">
-                {/* Travel specific metadata fields render safely here */}
-                {requisition.travel_meta?.travelers && (
-                  <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> dispatch crew grouping</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {requisition.travel_meta.travelers.map((t, idx) => (
-                        <div key={idx} className="p-2.5 bg-gray-50 rounded-md border border-gray-100 flex flex-col"><span className="font-bold text-gray-900 lowercase">{t.name}</span><span className="text-[10px] text-gray-400 lowercase">{t.title}</span></div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {requisition.travel_meta?.breakdown && (
-                  <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5" /> budget metric breakdown</h3>
-                    <div className="grid grid-cols-4 gap-2 text-center font-mono font-bold text-gray-900">
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">ticket</span>${requisition.travel_meta.breakdown.transportCost}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">fuel</span>${requisition.travel_meta.breakdown.fuelCost}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">lodging</span>${requisition.travel_meta.breakdown.lodgingPerDiem}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">meals</span>${requisition.travel_meta.breakdown.mealsPerDiem}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <div className="p-4 bg-gray-50 border border-dashed text-center rounded-lg text-gray-400 text-xs">travel log matrices populated</div>
             )}
           </div>
 
-          {/* RIGHT SIDEBAR PANEL MATRIX (Weight 5) */}
           <div className="lg:col-span-5 space-y-6">
-            
-            {/* Upper Stage Validation Pipeline Tracker */}
             <div className="border border-[#E5E7EB] rounded-xl p-5 bg-white shadow-sm space-y-4 text-xs font-semibold">
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-2">approval verification tree</div>
               <div className="space-y-4 relative before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gray-100">
@@ -236,7 +210,6 @@ export default function FinanceOfficerReviewPage({ params }) {
                     <div className="mt-0.5 z-10 bg-white">
                       {step.status === 'completed' && <CheckCircle2 className="w-4 h-4 text-[#16A34A] fill-white stroke-[2.5]" />}
                       {step.status === 'active' && <Clock className="w-4 h-4 text-[#EAB308] fill-white stroke-[2.5]" />}
-                      {step.status === 'failed' && <XCircle className="w-4 h-4 text-[#991B1B] fill-white stroke-[2.5]" />}
                       {step.status === 'upcoming' && <Circle className="w-4 h-4 text-gray-200 fill-white stroke-[2]" />}
                     </div>
                     <div className="flex flex-col">
@@ -248,7 +221,7 @@ export default function FinanceOfficerReviewPage({ params }) {
               </div>
             </div>
 
-            {/* 💬 THE INTERACTIVE CLARIFICATION CHAT PANEL MODULE */}
+            {/* Live Synchronized Chat Module */}
             <div className="border border-[#E5E7EB] rounded-xl bg-white shadow-sm flex flex-col h-[380px] overflow-hidden text-xs font-semibold">
               <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 select-none">
                 <MessageSquare className="w-4 h-4 text-[#0747A1]" />
@@ -258,37 +231,23 @@ export default function FinanceOfficerReviewPage({ params }) {
                 </div>
               </div>
 
-              /* Chat Message Logs Container */
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]/50 font-sans font-medium text-gray-700">
+                {chatMessages.length === 0 && (
+                  <div className="text-center py-4 text-gray-400 text-[10px] italic">no network logs transmitted. type below to clear audit parameters.</div>
+                )}
                 {chatMessages.map((msg) => {
-                  const isSystem = msg.sender === 'system';
                   const isFinanceDesk = msg.sender === 'finance desk';
-                  
-                  if (isSystem) {
-                    return (
-                      <div key={msg.id} className="text-center py-1 text-[10px] font-mono text-gray-400 lowercase italic bg-gray-100 rounded border border-gray-200/60 max-w-xs mx-auto">
-                        {msg.text}
-                      </div>
-                    );
-                  }
-
                   return (
                     <div key={msg.id} className={`flex flex-col max-w-[85%] space-y-0.5 ${isFinanceDesk ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{msg.sender}</span>
                       <div className={`p-3 rounded-xl text-xs leading-relaxed font-sans shadow-sm ${
-                        isFinanceDesk 
-                          ? 'bg-[#0747A1] text-white rounded-tr-none font-medium' 
-                          : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none font-medium'
-                      }`}>
-                        {msg.text}
-                      </div>
-                      <span className="text-[8px] font-mono text-gray-400 tracking-tight lowercase">{msg.time}</span>
+                        isFinanceDesk ? 'bg-[#0747A1] text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'
+                      }`}>{msg.text}</div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Message Input Trigger Box Form */}
               <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-100 bg-white flex items-center gap-2">
                 <input
                   type="text"
@@ -297,18 +256,12 @@ export default function FinanceOfficerReviewPage({ params }) {
                   placeholder="ask for a budget clarification or attachment amendment..."
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:border-[#0747A1] bg-gray-50 font-sans"
                 />
-                <button 
-                  type="submit" 
-                  className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer hover:opacity-90 transition-opacity shrink-0"
-                >
+                <button type="submit" className="p-2 bg-[#0747A1] text-white rounded-lg border-none cursor-pointer hover:opacity-90 transition-opacity shrink-0">
                   <Send className="w-3.5 h-3.5" />
                 </button>
               </form>
-
             </div>
-
           </div>
-
         </div>
       </div>
     </div>
