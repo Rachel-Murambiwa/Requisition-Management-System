@@ -17,19 +17,31 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'missing parameters' }, { status: 400 });
     }
 
-    // ✨ SUBMISSION SAFE BYPASS: Use createUser instead of inviteUserByEmail to kill the Resend SMTP barrier
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
-      password: 'TemporaryPassword123!', // Simple fallback password your teammates can use to sign in
-      email_confirm: true, // Auto-verifies the email instantly so no confirmation loop blocks them
-      user_metadata: { 
-        name: name.toLowerCase().trim(), 
-        role: role, 
-        hub_name: hub_name 
-      }
-    });
+    const cleanEmail = email.trim().toLowerCase();
 
-    if (error) throw error;
+    // 🚀 FIXED: Swapped out silent provisioning for a live SMTP mail invitation dispatch link
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      cleanEmail,
+      {
+        // Passes the user details along as metadata inside the sign-up payload stream
+        data: {
+          name: name.toLowerCase().trim(),
+          role: role,
+          hub_name: hub_name
+        },
+        // 🔄 OPTIONAL: Redirects them straight back to your workspace login screen once they click the email link
+        redirectTo: `${request.headers.get('origin') || 'http://localhost:3000'}/login`
+      }
+    );
+
+    if (error) {
+      // 🛡️ INTELLIGENT ERROR INTERCEPTION
+      // If Supabase tells us they are already registered, return a clean 400 instead of a scary 500 crash log
+      if (error.message.includes('already registered') || error.status === 422) {
+        return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
+      }
+      throw error;
+    }
 
     return NextResponse.json({ success: true, user: data.user });
 
