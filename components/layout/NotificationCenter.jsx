@@ -24,6 +24,18 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Helper to format timestamps to human-readable strings dynamically
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'just now';
+    const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+
   // 📥 METHOD A: INITIAL DATA FETCH
   async function loadNotifications() {
     try {
@@ -37,14 +49,14 @@ export default function NotificationCenter({ role = "finance-officer" }) {
       if (error) throw error;
 
       if (!data || data.length === 0) {
-        // Fallback placeholder arrays to keep screens hydrated during staging
+        // Hydrated with structural staging IDs from your dashboard manifests
         const fallbacks = {
           "finance-officer": [
-            { id: 991, type: "stage_1", title: "new request logged", msg: "rachel murambiwa logged a new travel allocation file for bulawayo hub.", time_label: "1m ago", read: false, link: "/finance-officer/review/7B9A2C41" },
-            { id: 992, type: "stage_3", title: "hop approval signed", msg: "head of operations authorized 4 items for harare site visits.", time_label: "30m ago", read: false, link: "/finance-officer/review/7B9A2C41" }
+            { id: 991, type: "stage_1", title: "new request logged", msg: "rachel murambiwa logged a new travel allocation file for bulawayo hub.", created_at: new Date(Date.now() - 60000).toISOString(), read: false, requisition_id: "9E5F33B1" },
+            { id: 992, type: "stage_3", title: "hop approval signed", msg: "head of operations authorized 4 items for harare site visits.", created_at: new Date(Date.now() - 1800000).toISOString(), read: false, requisition_id: "7B9A2C41" }
           ],
           requester: [
-            { id: 993, type: "clarification", title: "clarification needed", msg: "fo flagged your attachment for missing validation files.", time_label: "2h ago", read: false, link: "/requester" }
+            { id: 993, type: "clarification", title: "clarification needed", msg: "fo flagged your attachment for missing validation files.", created_at: new Date(Date.now() - 7200000).toISOString(), read: false, requisition_id: "7B9A2C41" }
           ]
         };
         setAlerts(fallbacks[role] || []);
@@ -60,28 +72,25 @@ export default function NotificationCenter({ role = "finance-officer" }) {
 
   // 📡 METHOD B: REAL-TIME STREAM PIPELINE
   useEffect(() => {
-    // Fire initial database index load
     loadNotifications();
 
-    // ⚡ Initialize hot WebSocket listener mapping to the public schema channel
+    // ⚡ Hot WebSocket channel pipeline interceptor targeting the live alert matrix
     const notificationsChannel = supabase
       .channel('live-internal-alerts')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT', // Intercept raw inserts only
+          event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `role=eq.${role}` // Security isolation perimeter filter
+          filter: `role=eq.${role}`
         },
         (payload) => {
-          // Push new incoming table payloads directly to the top of the UI state array
           setAlerts((currentAlerts) => [payload.new, ...currentAlerts]);
         }
       )
       .subscribe();
 
-    // Clean up channel allocations when components unmount or swap parameters
     return () => {
       supabase.removeChannel(notificationsChannel);
     };
@@ -90,6 +99,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   const unreadCount = alerts.filter(a => !a.read).length;
 
   const handleNotificationClick = async (alert) => {
+    // Optimistic UI change
     setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
     setIsOpen(false);
 
@@ -100,14 +110,18 @@ export default function NotificationCenter({ role = "finance-officer" }) {
         .eq('id', alert.id);
     }
 
+    // 🚀 DYNAMIC ROUTE GENERATOR: Resolves specific folder routes with zero hardcoded locks
     if (alert.link) {
       router.push(alert.link);
+    } else if (alert.requisition_id) {
+      router.push(`/${role}/review/${alert.requisition_id}`);
+    } else {
+      router.push(`/${role}`);
     }
   };
 
   const markAllRead = async () => {
     setAlerts(prev => prev.map(a => ({ ...a, read: true })));
-    
     await supabase
       .from('notifications')
       .update({ read: true })
@@ -123,7 +137,7 @@ export default function NotificationCenter({ role = "finance-officer" }) {
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#991B1B] text-white font-mono font-bold text-[9px] rounded-full flex items-center justify-center {unreadCount > 0 ? 'animate-bounce' : ''}">
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#991B1B] text-white font-mono font-bold text-[9px] rounded-full flex items-center justify-center animate-bounce">
             {unreadCount}
           </span>
         )}
@@ -170,7 +184,9 @@ export default function NotificationCenter({ role = "finance-officer" }) {
                       {!alert.read && <span className="w-1.5 h-1.5 bg-[#0747A1] rounded-full shrink-0" />}
                     </div>
                     <p className="text-gray-600 text-[11px] leading-relaxed lowercase">{alert.msg}</p>
-                    <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">{alert.time_label || 'just now'}</span>
+                    <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">
+                      {alert.time_label || formatTimeAgo(alert.created_at)}
+                    </span>
                   </div>
                 </div>
               ))
