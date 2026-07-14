@@ -18,9 +18,11 @@ export async function POST(request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const origin = request.headers.get('origin') || 'http://localhost:3000';
+    
+    // 🌐 Automatically resolves request domain or falls back to your live Vercel address
+    const origin = request.headers.get('origin') || 'https://requisition-management-system-melp.vercel.app';
 
-    // 🚀 STEP 1: Try sending the actual email invite
+    // 🚀 STEP 1: Dispatch the email invitation targeting your custom password setup page
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       cleanEmail,
       {
@@ -29,45 +31,25 @@ export async function POST(request) {
           role: role,
           hub_name: hub_name
         },
-        redirectTo: `${origin}/login`
+        redirectTo: `${origin}/reset-password`
       }
     );
 
-    // 🛡️ STEP 2: If ANY error happens (rate limit, SMTP config down, etc.), catch it immediately
+    // 🛡️ STEP 2: strict email error checking with no fallback password bypasses
     if (error) {
-      // Handle the case where they are already registered so we don't duplicate them
       if (error.message.includes('already registered') || error.status === 422) {
         return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
       }
-      
-      // For ANY other email/SMTP error, trigger the sandbox auto-confirm fallback immediately
-      console.warn("SMTP failure detected. Triggering universal sandbox fallback account provisioning:", error.message);
-      
-      const { data: fallbackUser, error: fallbackError } = await supabaseAdmin.auth.admin.createUser({
-        email: cleanEmail,
-        password: 'TemporaryPassword123!', 
-        email_confirm: true,
-        user_metadata: { 
-          name: name.toLowerCase().trim(), 
-          role: role, 
-          hub_name: hub_name 
-        }
-      });
-
-      if (fallbackError) throw fallbackError;
-
-      return NextResponse.json({ 
-        success: true, 
-        user: fallbackUser.user,
-        isFallbackMode: true,
-        temporaryPassword: 'TemporaryPassword123!'
-      });
+      throw error;
     }
 
-    return NextResponse.json({ success: true, user: data.user, isFallbackMode: false });
+    return NextResponse.json({ success: true, user: data.user });
 
   } catch (err) {
-    console.error("Invite API Crash:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error("Invite API Crash Log:", err.message);
+    return NextResponse.json({ 
+      success: false, 
+      error: `mail delivery failed: ${err.message}. verify your custom smtp settings.` 
+    }, { status: 500 });
   }
 }
