@@ -261,7 +261,7 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* Core Requisitions Matrix Table */}
+        {/* Core Requisitions Historical Table Matrix */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
@@ -290,8 +290,12 @@ export default function FinanceOfficerTerminal() {
                   {filteredRequisitions.map((req) => {
                     const statusKey = req.status?.toLowerCase() || 'pending';
                     
-                    // 🛡️ FIX: Warning badge ignores 'travel & logistics' requests dynamically!
-                    const requiresQuotes = parseFloat(req.amount) > 50 && req.category !== 'travel & logistics';
+                    // 🛡️ DYNAMIC RULE: Avoids demanding 3 vendor quotations for travel or emergency fund workflows
+                    const requiresQuotes = 
+                      parseFloat(req.amount) > 50 && 
+                      req.category !== 'travel & logistics' &&
+                      req.category !== 'miscellaneous emergency funds' &&
+                      !req.is_emergency;
                     
                     return (
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
