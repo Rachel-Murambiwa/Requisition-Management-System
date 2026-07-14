@@ -180,7 +180,6 @@ export default function FinanceOfficerTerminal() {
             <p className="text-sm text-[#4B5563] font-medium leading-relaxed max-w-2xl">
               cross-examine staff procurement files, request details, and compile approved items for country manager release
             </p>
-            {/* 🛠️ WIRED: Button now redirects to the dedicated review sheet before final dispatch */}
             <button 
               onClick={() => router.push('/finance-officer/manifest')}
               className="py-2.5 px-5 bg-[#0747A1] text-white text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:opacity-95 border-none cursor-pointer transition-all mt-2"
@@ -262,7 +261,7 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* Core Requisitions Historical Matrix Table */}
+        {/* Core Requisitions Matrix Table */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
@@ -289,8 +288,10 @@ export default function FinanceOfficerTerminal() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium text-gray-700 font-sans">
                   {filteredRequisitions.map((req) => {
-                    const isHighValue = parseFloat(req.amount) > 50;
                     const statusKey = req.status?.toLowerCase() || 'pending';
+                    
+                    // 🛡️ FIX: Warning badge ignores 'travel & logistics' requests dynamically!
+                    const requiresQuotes = parseFloat(req.amount) > 50 && req.category !== 'travel & logistics';
                     
                     return (
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
@@ -310,7 +311,7 @@ export default function FinanceOfficerTerminal() {
                         <td className="px-6 py-4 max-w-xs sm:max-w-md">
                           <div className="flex flex-col">
                             <span className="text-gray-900 font-bold lowercase truncate">{req.justification || 'procurement asset deployment'}</span>
-                            {isHighValue && (
+                            {requiresQuotes && (
                               <span className="text-[9px] font-black uppercase tracking-wide text-amber-600 mt-0.5 flex items-center gap-1">
                                 ⚠️ requires 3 vendor quotations
                               </span>
