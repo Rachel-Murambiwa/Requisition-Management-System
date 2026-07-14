@@ -64,20 +64,42 @@ export default function FinanceOfficerReviewPage({ params }) {
         console.error("Database lookup failure:", err.message);
         setRequisition({
           id: requisitionId || '7B9A2C41',
-          requester: 'rachel murambiwa',
-          location: 'harare hub',
+          requester: 'chacha',
+          location: 'harare',
           created_at: new Date().toISOString(),
-          amount: 450.00,
-          category: 'hub equipment & hardware',
-          payment_method: 'ecocash corporate wallet',
-          justification: 'purchase of 3 replacement uninterruptible power supply (ups) batteries for the harare hub classroom workstations to sustain teaching capacity during grid load-shedding cycles.',
+          amount: 1624.00,
+          category: 'travel & logistics',
+          payment_method: 'direct bank transfer',
+          justification: 'travel purpose: sensitization workshop. location route: vic falls.',
           is_emergency: false,
           status: 'pending',
           documents: [
             { name: 'quotation_powervale.pdf', size: '142 kb', url: '#' },
             { name: 'quotation_solargen.pdf', size: '198 kb', url: '#' },
             { name: 'vat_cert_powervale.pdf', size: '89 kb', url: '#' }
-          ]
+          ],
+          travel_meta: {
+            travelPurpose: 'sensitization workshop',
+            travelLocation: 'vic falls',
+            startDate: '2026-07-15',
+            endDate: '2026-07-20',
+            totalDays: 5,
+            transportType: 'personal vehicle',
+            accomResponsibility: 'Self',
+            airbnbLinks: '',
+            breakdown: { transportCost: '0', fuelCost: '400', tollsCost: '24', lodgingPerDiem: '20', mealsPerDiem: '50' },
+            travelers: [
+              { name: 'rachel', title: 'intern' },
+              { name: 'vimbai', title: 'hr' }
+            ],
+            itinerary: [
+              { day: 1, activity: 'Food', location: 'Vic Falls' },
+              { day: 2, activity: 'Food + Activities', location: 'Vic Falls' },
+              { day: 3, activity: 'Food + Activities', location: 'Vic Falls' },
+              { day: 4, activity: 'Food + Activities', location: 'Vic Falls' },
+              { day: 5, activity: 'Food', location: 'Vic Falls' }
+            ]
+          }
         });
       } finally {
         setLoading(false);
@@ -267,19 +289,62 @@ export default function FinanceOfficerReviewPage({ params }) {
                     <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> dispatch crew grouping</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {requisition.travel_meta.travelers.map((t, idx) => (
-                        <div key={idx} className="p-2.5 bg-gray-50 rounded-md border border-gray-100 flex flex-col"><span className="font-bold text-gray-900 lowercase">{t.name}</span><span className="text-[10px] text-gray-400 lowercase">{t.title}</span></div>
+                        <div key={idx} className="p-2.5 bg-gray-50 rounded-md border border-gray-100 flex flex-col">
+                          <span className="font-bold text-gray-900 lowercase">{t.name}</span>
+                          <span className="text-[10px] text-gray-400 lowercase">{t.title}</span>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
                 {requisition.travel_meta?.breakdown && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <h3 className="text-[10px] font-bold text-[#0747A1] uppercase tracking-wider flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5" /> budget metric breakdown</h3>
-                    <div className="grid grid-cols-4 gap-2 text-center font-mono font-bold text-gray-900">
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">ticket</span>${requisition.travel_meta.breakdown.transportCost}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">fuel</span>${requisition.travel_meta.breakdown.fuelCost}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">lodging</span>${requisition.travel_meta.breakdown.lodgingPerDiem}</div>
-                      <div className="p-2 bg-gray-50 rounded border"><span className="text-[8px] text-gray-400 font-sans block">meals</span>${requisition.travel_meta.breakdown.mealsPerDiem}</div>
+                    
+                    {/* Operational Summary Indicator Row */}
+                    <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex items-center justify-between text-[10px] font-bold text-slate-500 lowercase">
+                      <span>duration specs: <strong>{requisition.travel_meta.totalDays || 1} days</strong></span>
+                      <div className="h-3.5 w-px bg-slate-200" />
+                      <span>traveler specs: <strong>{requisition.travel_meta.travelers?.length || 1} people</strong></span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono font-bold text-gray-900">
+                      <div className="p-2.5 bg-gray-50 rounded border border-gray-100 flex flex-col justify-between text-left">
+                        <div>
+                          <span className="text-[8px] text-gray-400 font-sans block uppercase">ticket</span>
+                          <span className="text-[9px] text-gray-400 font-sans block mt-0.5">flat total</span>
+                        </div>
+                        <span className="text-xs text-gray-900 mt-2">${requisition.travel_meta.breakdown.transportCost}</span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded border border-gray-100 flex flex-col justify-between text-left">
+                        <div>
+                          <span className="text-[8px] text-gray-400 font-sans block uppercase">fuel</span>
+                          <span className="text-[9px] text-gray-400 font-sans block mt-0.5">flat total</span>
+                        </div>
+                        <span className="text-xs text-gray-900 mt-2">${requisition.travel_meta.breakdown.fuelCost}</span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded border border-gray-100 flex flex-col justify-between text-left">
+                        <div>
+                          <span className="text-[8px] text-gray-400 font-sans block uppercase">lodging</span>
+                          <span className="text-[8px] text-amber-700 font-sans block mt-0.5">
+                            ${requisition.travel_meta.breakdown.lodgingPerDiem}/d × {requisition.travel_meta.totalDays || 1}d × {requisition.travel_meta.travelers?.length || 1}p
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-900 mt-2">
+                          ${(parseFloat(requisition.travel_meta.breakdown.lodgingPerDiem) || 0) * (requisition.travel_meta.totalDays || 1) * (requisition.travel_meta.travelers?.length || 1)}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded border border-gray-100 flex flex-col justify-between text-left">
+                        <div>
+                          <span className="text-[8px] text-gray-400 font-sans block uppercase">meals</span>
+                          <span className="text-[8px] text-amber-700 font-sans block mt-0.5">
+                            ${requisition.travel_meta.breakdown.mealsPerDiem}/d × {requisition.travel_meta.totalDays || 1}d × {requisition.travel_meta.travelers?.length || 1}p
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-900 mt-2">
+                          ${(parseFloat(requisition.travel_meta.breakdown.mealsPerDiem) || 0) * (requisition.travel_meta.totalDays || 1) * (requisition.travel_meta.travelers?.length || 1)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
