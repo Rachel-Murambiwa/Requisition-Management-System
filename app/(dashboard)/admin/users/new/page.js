@@ -3,7 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { UserPlus, User, Mail, Loader2, AlertCircle, CheckCircle2, ArrowLeft, Users, LogOut, Copy, Check, ShieldAlert } from 'lucide-react';
+import { 
+  UserPlus, 
+  User, 
+  Mail, 
+  Loader2, 
+  AlertCircle, 
+  CheckCircle2, 
+  ArrowLeft, 
+  Users, 
+  LogOut 
+} from 'lucide-react';
 
 function AdminNavbar({ activeRoute, onSignOut }) {
   return (
@@ -44,10 +54,6 @@ export default function InviteStaffPage() {
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [copied, setCopied] = useState(false);
-
-  // ✨ NEW STATE METRICS: Tracks if fallback sandboxing is actively running
-  const [fallbackCredentials, setFallbackCredentials] = useState(null);
 
   const hubsList = [
     { value: 'harare', label: 'headquarters' },
@@ -67,7 +73,8 @@ export default function InviteStaffPage() {
 
   const handleSendInvite = async (e) => {
     e.preventDefault();
-    setError(''); setSuccessMessage(''); setFallbackCredentials(null); setCopied(false);
+    setError(''); 
+    setSuccessMessage(''); 
     if (!email || !name) return setError('all foundation details are required.');
     setIsLoadingAction(true);
 
@@ -81,32 +88,15 @@ export default function InviteStaffPage() {
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'failed dispatching security link.');
 
-      if (data.isFallbackMode) {
-        setSuccessMessage(`secure workspace row provisioned for ${email.toLowerCase()} via sandbox channel.`);
-        setFallbackCredentials({
-          email: email.trim().toLowerCase(),
-          password: data.temporaryPassword
-        });
-      } else {
-        setSuccessMessage(`secure workspace link emailed successfully to ${email.toLowerCase()}!`);
-      }
+      setSuccessMessage(`secure workspace link emailed successfully to ${email.toLowerCase()}!`);
       
-      setEmail(''); setName('');
+      // Clean form on success
+      setEmail(''); 
+      setName('');
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoadingAction(false);
-    }
-  };
-
-  const copyPasswordToClipboard = async () => {
-    if (!fallbackCredentials) return;
-    try {
-      await navigator.clipboard.writeText(fallbackCredentials.password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      setError('failed copying parameters to clipboard.');
     }
   };
 
@@ -127,41 +117,6 @@ export default function InviteStaffPage() {
 
         {error && <div className="p-3.5 bg-red-50 border-l-4 border-l-[#991B1B] text-xs font-semibold text-[#991B1B] flex items-center gap-2 rounded-r-lg"><AlertCircle className="w-4 h-4 shrink-0" />{error}</div>}
         {successMessage && <div className="p-3.5 bg-green-50 border-l-4 border-l-[#16A34A] text-xs font-semibold text-[#166534] flex items-center gap-2 rounded-r-lg"><CheckCircle2 className="w-4 h-4 shrink-0" />{successMessage}</div>}
-
-        {/* ✨ INTERACTIVE MANUAL FALLBACK CREDENTIAL ALERT CARD */}
-        {fallbackCredentials && (
-          <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl shadow-sm space-y-3 animate-fadeIn">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-700" /> SMTP rate restriction active
-              </span>
-              <span className="text-[10px] text-gray-400 font-medium lowercase">sandbox fallback loop active</span>
-            </div>
-            
-            <p className="text-[11px] font-medium text-amber-900 leading-normal font-sans">
-              The built-in Supabase email rate threshold has been reached. To bypass this barrier, a secure temporary user account was created directly inside the database profile registry instead. 
-            </p>
-
-            <div className="p-3 bg-white border border-amber-200 rounded-lg space-y-1.5 font-mono text-xs text-gray-700">
-              <div><span className="text-gray-400">Account Username:</span> <span className="font-bold text-gray-900">{fallbackCredentials.email}</span></div>
-              <div className="flex items-center justify-between">
-                <div><span className="text-gray-400">Temporary Password:</span> <span className="font-bold text-gray-900 select-all">{fallbackCredentials.password}</span></div>
-                <button 
-                  type="button"
-                  onClick={copyPasswordToClipboard}
-                  className="p-1.5 rounded bg-transparent border-none cursor-pointer hover:bg-gray-100 font-sans text-[10px] font-bold uppercase text-amber-800 transition-colors flex items-center gap-1 shrink-0"
-                >
-                  {copied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
-                  <span>{copied ? 'copied' : 'copy pass'}</span>
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[11px] font-medium text-slate-500 leading-normal">
-              Provide these credentials to your teammate over text or WhatsApp. They can immediately navigate to your workspace login screen, type these metrics in, and access their custom node role assignment instantly!
-            </p>
-          </div>
-        )}
 
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm p-6 sm:p-10 space-y-6">
           <div className="flex flex-col border-b border-gray-100 pb-4">
