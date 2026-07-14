@@ -2,30 +2,25 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  // 🛠️ LOCAL DEV BYPASS
-  if (process.env.NODE_ENV === 'development') {
-    return NextResponse.next();
-  }
-
+  // Create a base response stream so cookie headers are preserved
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
 
-  // Refresh and unwrap the active authentication token session parameters
+  // Refresh and validate the active authentication session tokens
   const { data: { session } } = await supabase.auth.getSession();
   
-  const nextUrl = req.nextUrl.clone();
-  const path = nextUrl.pathname;
+  const path = req.nextUrl.pathname;
 
-  // 1. AUTHENTICATION PROTECTION GUARD: Boot unauthenticated requests out to login terminal
+  // 1. AUTHENTICATION PROTECTION GUARD
   if (!session) {
     if (path !== '/login') {
-      nextUrl.pathname = '/login';
-      return NextResponse.redirect(nextUrl);
+      const loginUrl = new URL('/login', req.url);
+      return NextResponse.redirect(loginUrl);
     }
     return res;
   }
 
-  // 2. FETCH ROLE WITH FALLBACKS TO PREVENT EDGE DROPS
+  // 2. FETCH ROLE WITH USER METADATA FALLBACK
   let userRole = session?.user?.user_metadata?.role;
 
   try {
@@ -39,44 +34,40 @@ export async function middleware(req) {
       userRole = profile.role;
     }
   } catch (e) {
-    console.error("Middleware edge-db query bypassed:", e);
+    console.error("Middleware DB profile bypass:", e);
   }
 
-  // If role lookup completely fails at the edge layer, allow client-side layout router to handle it
+  // If role lookup completely fails, fallback to client-side layout router handlers
   if (!userRole) {
     return res;
   }
 
-  // 3. ISOLATION ROUTE MATRIX (Matches your true app path groups)
+  // 3. ISOLATION ROUTE MATRIX
+  // Instead of rewriting paths manually, we generate pristine URLs using req.url context
   if (path.startsWith('/requester') && userRole !== 'requester') {
-    nextUrl.pathname = '/unauthorised';
-    return NextResponse.redirect(nextUrl);
+    return NextResponse.redirect(new URL('/unauthorised', req.url));
   }
 
   if (path.startsWith('/finance-officer') && userRole !== 'finance-officer') {
-    nextUrl.pathname = '/unauthorised';
-    return NextResponse.redirect(nextUrl);
+    return NextResponse.redirect(new URL('/unauthorised', req.url));
   }
 
   if (path.startsWith('/admin') && userRole !== 'admin') {
-    nextUrl.pathname = '/unauthorised';
-    return NextResponse.redirect(nextUrl);
+    return NextResponse.redirect(new URL('/unauthorised', req.url));
   }
 
   if (path.startsWith('/head-of-operations') && userRole !== 'head-of-operations') {
-    nextUrl.pathname = '/unauthorised';
-    return NextResponse.redirect(nextUrl);
+    return NextResponse.redirect(new URL('/unauthorised', req.url));
   }
 
   if (path.startsWith('/country-manager') && userRole !== 'country-manager') {
-    nextUrl.pathname = '/unauthorised';
-    return NextResponse.redirect(nextUrl);
+    return NextResponse.redirect(new URL('/unauthorised', req.url));
   }
 
+  // Crucial: Return the original response stream containing the refreshed cookie tokens!
   return res;
 }
 
-// 🎯 TARGETED MATCHERS: Intercept dashboards only to protect authentication context
 export const config = {
   matcher: [
     '/admin/:path*',
