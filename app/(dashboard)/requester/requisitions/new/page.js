@@ -91,12 +91,28 @@ export default function NewRequisitionPage() {
     'petty cash disbursement'
   ];
 
+  // 🗓️ Calculate total trip duration dynamically
+  const calculatedDays = (startDate && endDate) 
+    ? Math.max(1, Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)))
+    : 1;
+
+  // 👥 Calculate number of travelers dynamically
+  const totalTravelerCount = travelers.length;
+
+  // 💰 Mathematically scale lodging and meals by Travelers AND Days
+  const scaledLodgingTotal = accomResponsibility === 'Self' 
+    ? (parseFloat(lodgingPerDiem) || 0) * calculatedDays * totalTravelerCount
+    : 0; // If Uncommon pays lodging directly, exclude it from per-diem release calculations
+
+  const scaledMealsTotal = (parseFloat(mealsPerDiem) || 0) * calculatedDays * totalTravelerCount;
+
+  // 📈 Calculated Travel Manifest Sum
   const calculatedTravelTotal = 
     (parseFloat(transportCost) || 0) + 
     (parseFloat(fuelCost) || 0) + 
     (parseFloat(tollsCost) || 0) + 
-    (parseFloat(lodgingPerDiem) || 0) + 
-    (parseFloat(mealsPerDiem) || 0);
+    scaledLodgingTotal + 
+    scaledMealsTotal;
 
   const finalAmount = requestType === 'travel' ? calculatedTravelTotal : (parseFloat(amount) || 0);
   const requiresComplianceDocs = finalAmount > 50 && requestType === 'standard';
@@ -272,7 +288,7 @@ export default function NewRequisitionPage() {
             travelLocation,
             startDate,
             endDate,
-            totalDays: Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) || 1,
+            totalDays: calculatedDays,
             transportType,
             accomResponsibility,
             airbnbLinks,
@@ -398,8 +414,15 @@ export default function NewRequisitionPage() {
                     <div className="flex flex-col gap-1"><label className="text-gray-400 text-[9px] uppercase tracking-wide">lodging per-diem</label><input type="number" placeholder="0.00" value={lodgingPerDiem} onChange={(e) => setLodgingPerDiem(e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none text-xs font-mono font-bold" /></div>
                     <div className="flex flex-col gap-1"><label className="text-gray-400 text-[9px] uppercase tracking-wide">meals per-diem</label><input type="number" placeholder="0.00" value={mealsPerDiem} onChange={(e) => setMealsPerDiem(e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none text-xs font-mono font-bold" /></div>
                   </div>
+                  
+                  {/* Rolled-Up Aggregation Dashboard View */}
                   <div className="p-4 bg-gray-900 border border-gray-900 rounded-lg flex items-center justify-between text-white shadow-sm select-none">
-                    <div><span className="text-[9px] text-gray-400 uppercase tracking-widest block font-bold">rolled-up aggregation manifest</span><span className="text-xs text-gray-300 mt-0.5 block font-medium lowercase">total travel budget calculated from inputs above</span></div>
+                    <div>
+                      <span className="text-[9px] text-gray-400 uppercase tracking-widest block font-bold">rolled-up aggregation manifest</span>
+                      <span className="text-xs text-gray-300 mt-0.5 block font-medium lowercase">
+                        calculated for {totalTravelerCount} {totalTravelerCount === 1 ? 'person' : 'people'} over {calculatedDays} {calculatedDays === 1 ? 'day' : 'days'}
+                      </span>
+                    </div>
                     <span className="text-2xl font-mono font-black text-white">${calculatedTravelTotal.toFixed(2)}</span>
                   </div>
                 </div>
