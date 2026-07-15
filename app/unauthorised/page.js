@@ -86,7 +86,7 @@ export default function UnauthorisedPage() {
           </button>
           
           <div className="text-[10px] text-gray-400 font-bold lowercase">
-            need assistance? contact your <span className="text-gray-600">hub manager</span> or administrator
+            need assistance? contact the <span className="text-gray-600">administrator</span>
           </div>
         </div>
 
