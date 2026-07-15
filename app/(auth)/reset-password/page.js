@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
@@ -15,6 +15,35 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // 📡 AUTOMATED CAPTURE MAPPING: Parses URL hashes from invite links to establish the Supabase session
+  useEffect(() => {
+    async function captureHashSession() {
+      if (typeof window !== 'undefined' && window.location.hash) {
+        try {
+          // Break apart hash strings like #access_token=xyz&refresh_token=abc
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            setIsLoading(true);
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) throw sessionError;
+          }
+        } catch (err) {
+          console.error("failed to mount explicit hash parameters:", err.message);
+          setError("your authorization link structure is malformed. please contact support.");
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+    captureHashSession();
+  }, [supabase]);
 
   const handlePasswordUpdate = async () => {
     if (!password || !confirmPassword) {
