@@ -114,7 +114,11 @@ export default function NewRequisitionPage() {
     scaledLodgingTotal + 
     scaledMealsTotal;
 
-  const finalAmount = requestType === 'travel' ? calculatedTravelTotal : (parseFloat(amount) || 0);
+  // 🚀 FIXED: Strictly bind final amount to active request type to prevent state leakage
+  const finalAmount = requestType === 'travel' 
+    ? calculatedTravelTotal 
+    : (parseFloat(amount) || 0);
+
   const requiresComplianceDocs = finalAmount > 50 && requestType === 'standard';
 
   const handleSignOut = async () => {
