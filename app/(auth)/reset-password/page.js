@@ -16,16 +16,27 @@ export default function ResetPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 📡 AUTOMATED CAPTURE MAPPING: Parses URL hashes from invite links to establish the Supabase session
+  // 📡 DUAL-MODE PARSING EXTRACTION: Captures tokens via standard parameters (?) OR URL hashes (#)
   useEffect(() => {
-    async function captureHashSession() {
-      if (typeof window !== 'undefined' && window.location.hash) {
+    async function captureVerificationSession() {
+      if (typeof window !== 'undefined') {
         try {
-          // Break apart hash strings like #access_token=xyz&refresh_token=abc
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const accessToken = hashParams.get('access_token');
-          const refreshToken = hashParams.get('refresh_token');
+          let accessToken = null;
+          let refreshToken = null;
 
+          // Mode 1: Check for tokens inside traditional query strings (?access_token=...)
+          const urlParams = new URLSearchParams(window.location.search);
+          accessToken = urlParams.get('access_token');
+          refreshToken = urlParams.get('refresh_token');
+
+          // Mode 2: Fallback check inside hash parameters (#access_token=...) if query parameters are blank
+          if (!accessToken && window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            accessToken = hashParams.get('access_token');
+            refreshToken = hashParams.get('refresh_token');
+          }
+
+          // 🔐 Authenticate the guest user in the background if tokens are verified
           if (accessToken && refreshToken) {
             setIsLoading(true);
             const { error: sessionError } = await supabase.auth.setSession({
@@ -35,18 +46,17 @@ export default function ResetPasswordPage() {
             if (sessionError) throw sessionError;
           }
         } catch (err) {
-          console.error("failed to mount explicit hash parameters:", err.message);
-          setError("your authorization link structure is malformed. please contact support.");
+          console.error("failed to mount link parameters:", err.message);
+          setError("your authorization link structure is expired or invalid. please request a new link.");
         } finally {
           setIsLoading(false);
         }
       }
     }
-    captureHashSession();
+    captureVerificationSession();
   }, [supabase]);
 
   const handlePasswordUpdate = async (e) => {
-    // Prevent default HTML form triggers from refreshing the window thread
     if (e) e.preventDefault();
 
     if (!password || !confirmPassword) {
@@ -68,22 +78,21 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 1. Update the user's password in the database
+      // 1. Save the password securely against the logged-in user session context
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
       
-      // 🚀 FIXED: Explicitly kill the temporary recovery session token 
-      // This wipes out the browser state so it doesn't clash with the regular login flow
+      // 2. Clear out the temporary email verification session to avoid login page clashing
       await supabase.auth.signOut();
 
-      // 2. Safely trigger the success view layout switch
+      // 3. Switch layout views to indicate complete registration
       setIsSuccess(true);
     } catch (err) {
       console.error("Password update tracking error:", err.message);
-      setError('session expired or invalid token link. please request a new link.');
+      setError('your session context has expired or the token link is invalid. please check with support.');
     } finally {
       setIsLoading(false);
     }
@@ -92,7 +101,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center bg-white px-4">
       
-      {/* Top-Left Global Corporate Identity Header */}
+      {/* Global Corporate Identity Header */}
       <div className="absolute top-8 left-6 sm:top-10 sm:left-12 flex items-center gap-2 select-none">
         <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">
           uncommon
@@ -102,12 +111,10 @@ export default function ResetPasswordPage() {
         </span>
       </div>
 
-      {/* Main Core View Area */}
       <div className="w-full max-w-[420px] py-12">
         
         {!isSuccess ? (
           <form onSubmit={handlePasswordUpdate} className="block w-full">
-            {/* Identity Text Layout Block */}
             <div className="flex flex-col mb-8">
               <h1 className="text-3xl font-bold text-[#0A1628] leading-tight tracking-tight lowercase">
                 set your private password
@@ -117,17 +124,14 @@ export default function ResetPasswordPage() {
               </p>
             </div>
 
-            {/* Error Notification Portal */}
             {error && (
               <div className="mb-6 p-3 bg-[#FEE2E2] border border-l-4 border-l-[#991B1B] border-[#FECACA] rounded-r-md text-xs font-medium text-[#991B1B]">
                 {error}
               </div>
             )}
 
-            {/* Input Interactive Fields Layout */}
             <div className="space-y-5">
               
-              {/* Password Core Field */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="password-field">
                   new password
@@ -154,7 +158,6 @@ export default function ResetPasswordPage() {
                 </div>
               </div>
 
-              {/* Password Confirmation Field */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="confirm-field">
                   confirm new password
@@ -173,7 +176,6 @@ export default function ResetPasswordPage() {
                 </div>
               </div>
 
-              {/* Form Action Completion CTA Button */}
               <div className="pt-2">
                 <button
                   type="submit"
@@ -189,7 +191,6 @@ export default function ResetPasswordPage() {
             </div>
           </form>
         ) : (
-          /* Successful Update Layout Block Template View */
           <div className="flex flex-col text-left py-4 animate-fadeIn">
             <CheckCircle className="w-12 h-12 text-[#1D4ED8] mb-6 stroke-[1.5]" />
             <h1 className="text-3xl font-bold text-[#0A1628] leading-tight tracking-tight lowercase">
