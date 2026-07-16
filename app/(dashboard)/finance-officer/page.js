@@ -31,7 +31,6 @@ export default function FinanceOfficerTerminal() {
     try {
       setLoading(true);
       
-      // Fetch ALL records to ensure no null stages are accidentally filtered out
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -40,7 +39,6 @@ export default function FinanceOfficerTerminal() {
       if (error) throw error;
 
       if (!records || records.length === 0) {
-        // AUTOMATED SANDBOX HYDRO-LOGS: Pre-populates rows matching structural metrics if DB is empty
         setRequisitions([
           {
             id: "7B9A2C41",
@@ -64,18 +62,6 @@ export default function FinanceOfficerTerminal() {
             payment_method: "petty cash disbursement",
             status: "pending",
             created_at: new Date(Date.now() - 3600000).toISOString(),
-            current_stage: "finance-officer"
-          },
-          {
-            id: "9E5F33B1",
-            requester: "nkosi ndlovu",
-            location: "vic falls hub",
-            justification: "emergency perimeter security gate lock configuration alignment",
-            category: "miscellaneous emergency funds",
-            amount: 115.00,
-            payment_method: "direct bank transfer",
-            status: "approved",
-            created_at: new Date(Date.now() - 86400000).toISOString(),
             current_stage: "finance-officer"
           }
         ]);
@@ -129,6 +115,18 @@ export default function FinanceOfficerTerminal() {
     router.push('/login');
   };
 
+  // Helper helper to evaluate if a stage represents Operations/HOOP
+  const isOperationsStage = (stage) => {
+    if (!stage) return false;
+    const clean = stage.toLowerCase().replace(/[^a-z0-9]/g, ''); // strip out underscores, hyphens, spaces
+    return (
+      clean.includes('operations') || 
+      clean.includes('hoop') || 
+      clean.includes('ops') || 
+      clean.includes('manager')
+    );
+  };
+
   // Dynamic Regional Live Matrix Metric Accumulators include items advanced to HOOP
   const getRegionalApprovedSum = (slug) => {
     return requisitions
@@ -138,7 +136,7 @@ export default function FinanceOfficerTerminal() {
         const matchesLocation = r.location?.toLowerCase().includes(slug.toLowerCase());
         
         const isApprovedOrWithOps = statusKey === 'approved' || 
-          (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop'));
+          (statusKey === 'pending' && isOperationsStage(stageKey));
         
         return isApprovedOrWithOps && matchesLocation;
       })
@@ -154,7 +152,7 @@ export default function FinanceOfficerTerminal() {
       const statusKey = (r.status || "").toLowerCase().trim();
       const stageKey = (r.current_stage || "").toLowerCase().trim();
       return statusKey === 'approved' || 
-        (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop'));
+        (statusKey === 'pending' && isOperationsStage(stageKey));
     })
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
@@ -168,7 +166,7 @@ export default function FinanceOfficerTerminal() {
       rowTabGroup = 'approved';
     } else if (statusKey === 'rejected') {
       rowTabGroup = 'rejected';
-    } else if (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop')) {
+    } else if (statusKey === 'pending' && isOperationsStage(stageKey)) {
       rowTabGroup = 'approved';
     }
 
@@ -343,7 +341,7 @@ export default function FinanceOfficerTerminal() {
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
                         
                         <td className="px-6 py-4 font-mono font-bold text-[#0747A1] uppercase tracking-wide">
-                          {req.id.startsWith("REQ-") ? req.id : `REQ-${req.id.substring(0,4)}`}
+                          {req.id.startsWith("REQ-") ? req.id : `REQ-${req.id.substring(0,8)}`}
                         </td>
 
                         <td className="px-6 py-4 font-bold text-gray-900 lowercase">
@@ -397,17 +395,16 @@ export default function FinanceOfficerTerminal() {
                               </button>
                             </div>
                           ) : (
-                            /* 🚀 FIXED: Renders green status pill dynamically when HOOP signs off, amber while waiting */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all duration-300 ${
                               statusKey === 'approved' 
                                 ? 'bg-green-50 text-green-700 border-green-200' 
-                                : (currentStage === 'head-of-operations' || currentStage === 'head of operations' || currentStage === 'hoop') && statusKey === 'pending'
+                                : isOperationsStage(currentStage) && statusKey === 'pending'
                                   ? 'bg-amber-50 text-amber-700 border-amber-200'
                                   : 'bg-red-50 text-red-700 border-red-200'
                             }`}>
                               {statusKey === 'approved' 
                                 ? 'vetted & authorized' 
-                                : (currentStage === 'head-of-operations' || currentStage === 'head of operations' || currentStage === 'hoop') && statusKey === 'pending'
+                                : isOperationsStage(currentStage) && statusKey === 'pending'
                                   ? 'waiting for operations approval' 
                                   : 'audit rejected'}
                             </span>
