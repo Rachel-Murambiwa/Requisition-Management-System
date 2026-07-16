@@ -75,9 +75,10 @@ export default function FinanceOfficerTerminal() {
     }
   }
 
+  // 🚀 AUTO-REFRESH ON TAB CHANGE: Re-fetch from database when the user clicks a filter tab
   useEffect(() => {
     loadCentralAuditQueue();
-  }, [supabase]);
+  }, [supabase, statusFilter]);
 
   // Execute immediate state transitions directly against the target database record
   const handleUpdateStatus = async (id, targetStatus) => {
@@ -97,12 +98,8 @@ export default function FinanceOfficerTerminal() {
 
       if (error) throw error;
 
-      // Update local React state values so they dynamically update without vanishing
-      setRequisitions(prev => prev.map(item => 
-        item.id === id 
-          ? { ...item, status: databaseStatus, current_stage: nextStage } 
-          : item
-      ));
+      // Fetch freshly updated queue after status change
+      await loadCentralAuditQueue();
     } catch (err) {
       alert(`Pipeline transaction faulted: ${err.message}`);
     } finally {
@@ -118,7 +115,7 @@ export default function FinanceOfficerTerminal() {
   // Helper helper to evaluate if a stage represents Operations/HOOP
   const isOperationsStage = (stage) => {
     if (!stage) return false;
-    const clean = stage.toLowerCase().replace(/[^a-z0-9]/g, ''); // strip out underscores, hyphens, spaces
+    const clean = stage.toLowerCase().replace(/[^a-z0-9]/g, '');
     return (
       clean.includes('operations') || 
       clean.includes('hoop') || 
@@ -135,6 +132,7 @@ export default function FinanceOfficerTerminal() {
         const stageKey = (r.current_stage || "").toLowerCase().trim();
         const matchesLocation = r.location?.toLowerCase().includes(slug.toLowerCase());
         
+        // Includes anything approved OR sitting at HOOP awaiting sign-off
         const isApprovedOrWithOps = statusKey === 'approved' || 
           (statusKey === 'pending' && isOperationsStage(stageKey));
         
@@ -162,9 +160,11 @@ export default function FinanceOfficerTerminal() {
     const stageKey = (req.current_stage || "").toLowerCase().trim();
 
     let rowTabGroup = 'pending';
-    if (statusKey === 'approved') {
+    
+    // 🚀 ULTRA-RESILIENT check for Approved status
+    if (statusKey.includes('approved') || statusKey === 'approved') {
       rowTabGroup = 'approved';
-    } else if (statusKey === 'rejected') {
+    } else if (statusKey.includes('rejected') || statusKey === 'rejected') {
       rowTabGroup = 'rejected';
     } else if (statusKey === 'pending' && isOperationsStage(stageKey)) {
       rowTabGroup = 'approved';
@@ -183,7 +183,6 @@ export default function FinanceOfficerTerminal() {
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
       
-      {/* Navbar View Layout Frame */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -210,10 +209,8 @@ export default function FinanceOfficerTerminal() {
         </div>
       </nav>
 
-      {/* Main Layout Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         
-        {/* Upper Title Description Row Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start mb-10">
           <div className="lg:col-span-2 space-y-4 pt-2">
             <h1 className="text-4xl font-black text-[#0A1628] tracking-tight lowercase">incoming review pool</h1>
@@ -228,7 +225,6 @@ export default function FinanceOfficerTerminal() {
             </button>
           </div>
 
-          {/* SIDEBAR METRICS WIDGET */}
           <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm space-y-4">
             <div className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider border-b border-gray-100 pb-2">
               approved manifest total
@@ -254,10 +250,8 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* CONTROLS BAR: Tabs on left with search/region selectors on right */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-sm mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           
-          {/* Left Side Filter Tabs */}
           <div className="flex bg-gray-100/80 p-1 rounded-lg text-xs font-bold select-none lowercase self-start">
             {['all', 'pending', 'approved', 'rejected'].map((tab) => (
               <button
@@ -272,7 +266,6 @@ export default function FinanceOfficerTerminal() {
             ))}
           </div>
 
-          {/* Right Side Settings Dropdown + Input Filters */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <select
@@ -301,7 +294,6 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* Core Requisitions Historical Table Matrix */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
