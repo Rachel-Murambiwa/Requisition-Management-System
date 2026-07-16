@@ -85,8 +85,6 @@ export default function FinanceOfficerTerminal() {
     setProcessingId(id);
     try {
       const isApproving = targetStatus === 'approved';
-      
-      // 🚀 DATABASE ENUM ALIGNMENT: Uses underscore notation to pass database validation rules safely
       const nextStage = isApproving ? 'head_of_operations' : 'finance-officer';
       const databaseStatus = isApproving ? 'pending' : 'rejected';
 
@@ -131,13 +129,11 @@ export default function FinanceOfficerTerminal() {
     return requisitions
       .filter(r => {
         const statusKey = (r.status || "").toLowerCase().trim();
-        const stageKey = (r.current_stage || "").toLowerCase().trim();
         const matchesLocation = r.location?.toLowerCase().includes(slug.toLowerCase());
         
-        const isApprovedOrWithOps = statusKey === 'approved' || 
-          (statusKey === 'pending' && isOperationsStage(stageKey));
-        
-        return isApprovedOrWithOps && matchesLocation;
+        // Show only finalized approved amounts in the metrics sidebar
+        const isFullyApproved = statusKey === 'approved';
+        return isFullyApproved && matchesLocation;
       })
       .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
   };
@@ -149,25 +145,23 @@ export default function FinanceOfficerTerminal() {
   const grandApprovedTotal = requisitions
     .filter(r => {
       const statusKey = (r.status || "").toLowerCase().trim();
-      const stageKey = (r.current_stage || "").toLowerCase().trim();
-      return statusKey === 'approved' || 
-        (statusKey === 'pending' && isOperationsStage(stageKey));
+      return statusKey === 'approved';
     })
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // Filter treats HOOP-forwarded items as 'approved' under this specific dashboard view
+  // Filter pipeline separating items into Pending vs Approved
   const filteredRequisitions = requisitions.filter(req => {
     const statusKey = (req.status || "").toLowerCase().trim();
-    const stageKey = (req.current_stage || "").toLowerCase().trim();
 
     let rowTabGroup = 'pending';
     
+    // 🚀 CLEAN PIPELINE: Fully approved items go to approved, any type of pending stays in pending
     if (statusKey.includes('approved') || statusKey === 'approved') {
       rowTabGroup = 'approved';
     } else if (statusKey.includes('rejected') || statusKey === 'rejected') {
       rowTabGroup = 'rejected';
-    } else if (statusKey === 'pending' && isOperationsStage(stageKey)) {
-      rowTabGroup = 'approved';
+    } else {
+      rowTabGroup = 'pending';
     }
 
     const matchStatus = statusFilter === 'all' || rowTabGroup === statusFilter;
@@ -261,7 +255,7 @@ export default function FinanceOfficerTerminal() {
                   statusFilter === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
                 }`}
               >
-                {tab === 'approved' ? 'approved / forwarded' : tab}
+                {tab}
               </button>
             ))}
           </div>
