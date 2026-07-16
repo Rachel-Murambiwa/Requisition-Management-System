@@ -66,10 +66,17 @@ export default function HeadOfOperationsDashboard() {
       if (!data || data.length === 0) {
         setQueue(FORWARDED_AUDIT_QUEUE);
       } else {
-        // Filter in-memory: Display records that are strictly targeted for 'head-of-operations'
-        const liveHOOPRequests = data.filter(req => 
-          req.current_stage === 'head-of-operations'
-        );
+        // Filter in-memory: Display records that match HOOP stage variations (case-insensitive & space-friendly)
+        const liveHOOPRequests = data.filter(req => {
+          if (!req.current_stage) return false;
+          const stageNormalized = req.current_stage.toLowerCase().trim();
+          return (
+            stageNormalized === 'head-of-operations' ||
+            stageNormalized === 'head of operations' ||
+            stageNormalized === 'head_of_operations' ||
+            stageNormalized === 'hoop'
+          );
+        });
 
         // Failsafe: Fall back to sandbox dummy cards if no live requests are currently with HOOP
         if (liveHOOPRequests.length === 0) {
