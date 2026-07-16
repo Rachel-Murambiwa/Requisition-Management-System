@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { Lock, Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -15,45 +15,51 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [verifyingLink, setVerifyingLink] = useState(true);
 
-  // 📡 DUAL-MODE PARSING EXTRACTION: Captures tokens via standard parameters (?) OR URL hashes (#)
+  // 📡 AUTOMATED LINK EXCHANGE: Swaps the incoming invite token_hash for an active live user session
   useEffect(() => {
-    async function captureVerificationSession() {
+    async function handleEmailInviteVerification() {
       if (typeof window !== 'undefined') {
         try {
-          let accessToken = null;
-          let refreshToken = null;
-
-          // Mode 1: Check for tokens inside traditional query strings (?access_token=...)
+          setVerifyingLink(true);
+          
+          // Parse out standard query strings sent by Supabase invite emails
           const urlParams = new URLSearchParams(window.location.search);
-          accessToken = urlParams.get('access_token');
-          refreshToken = urlParams.get('refresh_token');
+          const tokenHash = urlParams.get('token_hash');
+          const type = urlParams.get('type') || 'invite'; // Defaults to invite workflow
 
-          // Mode 2: Fallback check inside hash parameters (#access_token=...) if query parameters are blank
-          if (!accessToken && window.location.hash) {
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            accessToken = hashParams.get('access_token');
-            refreshToken = hashParams.get('refresh_token');
-          }
-
-          // 🔐 Authenticate the guest user in the background if tokens are verified
-          if (accessToken && refreshToken) {
-            setIsLoading(true);
-            const { error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
+          if (tokenHash) {
+            // 🚀 AUTOMATED ACTIVATE: Exchange confirmation hash to fully verify and log in the user
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: type,
             });
-            if (sessionError) throw sessionError;
+            
+            if (verifyError) throw verifyError;
+          } else {
+            // Fallback: If your email template routes tokens through a hash block instead
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
+
+            if (accessToken && refreshToken) {
+              const { error: sessionError } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+              if (sessionError) throw sessionError;
+            }
           }
         } catch (err) {
-          console.error("failed to mount link parameters:", err.message);
-          setError("your authorization link structure is expired or invalid. please request a new link.");
+          console.error("Link verification pipeline fault:", err.message);
+          setError("the invitation link is invalid or has expired. please ask your administrator for a new invite.");
         } finally {
-          setIsLoading(false);
+          setVerifyingLink(false);
         }
       }
     }
-    captureVerificationSession();
+    handleEmailInviteVerification();
   }, [supabase]);
 
   const handlePasswordUpdate = async (e) => {
@@ -78,21 +84,19 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 1. Save the password securely against the logged-in user session context
+      // 🔒 SECURE SAVE: Now that the user is verified and authenticated, this will successfully write to the DB
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
       
-      // 2. Clear out the temporary email verification session to avoid login page clashing
+      // Clear out the browser auth cookies so they can perform a completely clean, fresh login next
       await supabase.auth.signOut();
-
-      // 3. Switch layout views to indicate complete registration
       setIsSuccess(true);
     } catch (err) {
       console.error("Password update tracking error:", err.message);
-      setError('your session context has expired or the token link is invalid. please check with support.');
+      setError('unable to save password. your authentication context may have timed out.');
     } finally {
       setIsLoading(false);
     }
@@ -101,25 +105,26 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center bg-white px-4">
       
-      {/* Global Corporate Identity Header */}
+      {/* Identity Logo Frame */}
       <div className="absolute top-8 left-6 sm:top-10 sm:left-12 flex items-center gap-2 select-none">
-        <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">
-          uncommon
-        </span>
-        <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded-badge tracking-wider uppercase">
-          rms
-        </span>
+        <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">uncommon</span>
+        <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded uppercase">rms</span>
       </div>
 
       <div className="w-full max-w-[420px] py-12">
         
-        {!isSuccess ? (
+        {verifyingLink ? (
+          <div className="flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase py-12">
+            <Loader2 className="w-6 h-6 text-[#1D4ED8] animate-spin" />
+            <span>verifying security invitation link...</span>
+          </div>
+        ) : !isSuccess ? (
           <form onSubmit={handlePasswordUpdate} className="block w-full">
             <div className="flex flex-col mb-8">
               <h1 className="text-3xl font-bold text-[#0A1628] leading-tight tracking-tight lowercase">
                 set your private password
               </h1>
-              <p className="text-sm text-[#4B5563] mt-2 tracking-normal">
+              <p className="text-sm text-[#4B5563] mt-2">
                 finalize your account profile credentials to gain system entry
               </p>
             </div>
@@ -131,7 +136,6 @@ export default function ResetPasswordPage() {
             )}
 
             <div className="space-y-5">
-              
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="password-field">
                   new password
@@ -145,7 +149,7 @@ export default function ResetPasswordPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     disabled={isLoading}
-                    className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
+                    className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
                   />
                   <button
                     type="button"
@@ -171,7 +175,7 @@ export default function ResetPasswordPage() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
                     disabled={isLoading}
-                    className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
+                    className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
                   />
                 </div>
               </div>
@@ -180,14 +184,11 @@ export default function ResetPasswordPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className={`w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase border-none focus:outline-none ${
-                    isLoading ? 'opacity-60 cursor-not-allowed bg-[#1A2E4A]' : ''
-                  }`}
+                  className="w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer text-center lowercase border-none focus:outline-none disabled:opacity-60"
                 >
                   {isLoading ? 'saving password credentials...' : 'save password credentials'}
                 </button>
               </div>
-
             </div>
           </form>
         ) : (
@@ -203,7 +204,7 @@ export default function ResetPasswordPage() {
               <button
                 type="button"
                 onClick={() => router.push('/login')}
-                className="inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase border-none focus:outline-none"
+                className="inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer text-center lowercase border-none focus:outline-none"
               >
                 proceed to login
               </button>
