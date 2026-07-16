@@ -26,16 +26,16 @@ export default function FinanceOfficerTerminal() {
   const [regionFilter, setRegionFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Hydrate only requests currently in the FO stage on load
+  // Hydrate full pending and historically logged pipeline requests on load
   async function loadCentralAuditQueue() {
     try {
       setLoading(true);
       
-      // 🚀 AUTOMATED PIPELINE FILTER: Strictly queries records awaiting FO audit
+      // 🚀 UPDATED: Fetch requests that are currently in FO review OR have progressed to HOOP review
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
-        .eq('current_stage', 'finance-officer')
+        .in('current_stage', ['finance-officer', 'head-of-operations'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -52,7 +52,8 @@ export default function FinanceOfficerTerminal() {
             amount: 450.00,
             payment_method: "ecocash corporate wallet",
             status: "pending",
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            current_stage: "finance-officer"
           },
           {
             id: "3C8D11A2",
@@ -63,7 +64,8 @@ export default function FinanceOfficerTerminal() {
             amount: 35.00,
             payment_method: "petty cash disbursement",
             status: "pending",
-            created_at: new Date(Date.now() - 3600000).toISOString()
+            created_at: new Date(Date.now() - 3600000).toISOString(),
+            current_stage: "finance-officer"
           },
           {
             id: "9E5F33B1",
@@ -74,7 +76,8 @@ export default function FinanceOfficerTerminal() {
             amount: 115.00,
             payment_method: "direct bank transfer",
             status: "approved",
-            created_at: new Date(Date.now() - 86400000).toISOString()
+            created_at: new Date(Date.now() - 86400000).toISOString(),
+            current_stage: "finance-officer"
           }
         ]);
       } else {
@@ -91,12 +94,10 @@ export default function FinanceOfficerTerminal() {
     loadCentralAuditQueue();
   }, [supabase]);
 
-  // 🚀 AUTOMATED STATE TRANSITION CONTROLLER
+  // Execute immediate state transitions directly against the target database record
   const handleUpdateStatus = async (id, targetStatus) => {
     setProcessingId(id);
     try {
-      // If FO approves, hand over stage to HOOP and set status to pending. 
-      // If FO rejects, keep stage on FO and update status to rejected.
       const isApproving = targetStatus === 'approved';
       const nextStage = isApproving ? 'head-of-operations' : 'finance-officer';
       const databaseStatus = isApproving ? 'pending' : 'rejected';
@@ -111,9 +112,11 @@ export default function FinanceOfficerTerminal() {
 
       if (error) throw error;
 
-      // Update local state queue or transition them off the FO dashboard queue
+      // 🎉 KEEP IN STATE: Update local React state values so they dynamically update to "waiting" instead of vanishing
       setRequisitions(prev => prev.map(item => 
-        item.id === id ? { ...item, status: databaseStatus, current_stage: nextStage } : item
+        item.id === id 
+          ? { ...item, status: databaseStatus, current_stage: nextStage } 
+          : item
       ));
     } catch (err) {
       alert(`Pipeline transaction faulted: ${err.message}`);
@@ -341,7 +344,8 @@ export default function FinanceOfficerTerminal() {
                         </td>
 
                         <td className="px-6 py-4 text-right">
-                          {statusKey === 'pending' ? (
+                          {/* 🚀 FIXED: Dynamic Render check. Shows action controls only when request stage is with FO */}
+                          {req.current_stage === 'finance-officer' && statusKey === 'pending' ? (
                             <div className="flex items-center justify-end gap-2">
                               
                               <button 
@@ -370,12 +374,19 @@ export default function FinanceOfficerTerminal() {
 
                             </div>
                           ) : (
+                            /* Shows elegant, non-interactive status pill while awaiting operations or other updates */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide select-none border cursor-pointer transition-all duration-300 transform active:scale-95 will-change-transform hover:-translate-y-1 hover:scale-105 ${
-                              statusKey === 'approved' 
-                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100/70 hover:shadow-green-100/50 hover:shadow-md' 
-                                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70 hover:shadow-red-100/50 hover:shadow-md'
+                              req.current_stage === 'head-of-operations' && statusKey === 'pending'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/70'
+                                : statusKey === 'approved' 
+                                  ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100/70 hover:shadow-green-100/50' 
+                                  : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70 hover:shadow-red-100/50'
                             }`}>
-                              {statusKey === 'approved' ? 'vetted & authorized' : 'audit rejected'}
+                              {req.current_stage === 'head-of-operations' && statusKey === 'pending' 
+                                ? 'waiting for operations approval' 
+                                : statusKey === 'approved' 
+                                  ? 'vetted & authorized' 
+                                  : 'audit rejected'}
                             </span>
                           )}
                         </td>
