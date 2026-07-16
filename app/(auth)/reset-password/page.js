@@ -46,7 +46,7 @@ export default function ResetPasswordPage() {
   }, [supabase]);
 
   const handlePasswordUpdate = async (e) => {
-    // 🚀 FIXED: Prevent any default HTML form triggers from refreshing the window thread
+    // Prevent default HTML form triggers from refreshing the window thread
     if (e) e.preventDefault();
 
     if (!password || !confirmPassword) {
@@ -68,14 +68,18 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 🔒 FIXED: Await the explicit updateUser promise to finish completely
-      const { data, error: updateError } = await supabase.auth.updateUser({
+      // 1. Update the user's password in the database
+      const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
       
-      // Successfully set state without context leakage crashing inputs
+      // 🚀 FIXED: Explicitly kill the temporary recovery session token 
+      // This wipes out the browser state so it doesn't clash with the regular login flow
+      await supabase.auth.signOut();
+
+      // 2. Safely trigger the success view layout switch
       setIsSuccess(true);
     } catch (err) {
       console.error("Password update tracking error:", err.message);
