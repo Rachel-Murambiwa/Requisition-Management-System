@@ -75,7 +75,7 @@ export default function FinanceOfficerTerminal() {
     }
   }
 
-  // 🚀 AUTO-REFRESH ON TAB CHANGE: Re-fetch from database when the user clicks a filter tab
+  // Auto-refresh on tab switch
   useEffect(() => {
     loadCentralAuditQueue();
   }, [supabase, statusFilter]);
@@ -85,7 +85,9 @@ export default function FinanceOfficerTerminal() {
     setProcessingId(id);
     try {
       const isApproving = targetStatus === 'approved';
-      const nextStage = isApproving ? 'head-of-operations' : 'finance-officer';
+      
+      // 🚀 DATABASE ENUM ALIGNMENT: Uses underscore notation to pass database validation rules safely
+      const nextStage = isApproving ? 'head_of_operations' : 'finance-officer';
       const databaseStatus = isApproving ? 'pending' : 'rejected';
 
       const { error } = await supabase
@@ -98,7 +100,7 @@ export default function FinanceOfficerTerminal() {
 
       if (error) throw error;
 
-      // Fetch freshly updated queue after status change
+      // Re-hydrate the full list cleanly
       await loadCentralAuditQueue();
     } catch (err) {
       alert(`Pipeline transaction faulted: ${err.message}`);
@@ -132,7 +134,6 @@ export default function FinanceOfficerTerminal() {
         const stageKey = (r.current_stage || "").toLowerCase().trim();
         const matchesLocation = r.location?.toLowerCase().includes(slug.toLowerCase());
         
-        // Includes anything approved OR sitting at HOOP awaiting sign-off
         const isApprovedOrWithOps = statusKey === 'approved' || 
           (statusKey === 'pending' && isOperationsStage(stageKey));
         
@@ -161,7 +162,6 @@ export default function FinanceOfficerTerminal() {
 
     let rowTabGroup = 'pending';
     
-    // 🚀 ULTRA-RESILIENT check for Approved status
     if (statusKey.includes('approved') || statusKey === 'approved') {
       rowTabGroup = 'approved';
     } else if (statusKey.includes('rejected') || statusKey === 'rejected') {
