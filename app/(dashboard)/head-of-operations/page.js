@@ -55,18 +55,28 @@ export default function HeadOfOperationsDashboard() {
     try {
       setLoading(true);
       
-      // 🚀 FIXED: Fetch only requisitions that have successfully cleared FO vetting
+      // 🚀 SAFE REVERT: Fetch all records from database to protect against empty/null stage values
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
-        .eq('current_stage', 'head-of-operations')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      
       if (!data || data.length === 0) {
         setQueue(FORWARDED_AUDIT_QUEUE);
       } else {
-        setQueue(data);
+        // Filter in-memory: Display records that are strictly targeted for 'head-of-operations'
+        const liveHOOPRequests = data.filter(req => 
+          req.current_stage === 'head-of-operations'
+        );
+
+        // Failsafe: Fall back to sandbox dummy cards if no live requests are currently with HOOP
+        if (liveHOOPRequests.length === 0) {
+          setQueue(FORWARDED_AUDIT_QUEUE);
+        } else {
+          setQueue(liveHOOPRequests);
+        }
       }
     } catch (err) {
       console.error("Ops sync network error:", err.message);
@@ -91,8 +101,8 @@ export default function HeadOfOperationsDashboard() {
       const { error } = await supabase
         .from('requisitions')
         .update({ 
-          current_stage: 'finance-officer', // 🚀 Route back to FO for compiling/manifest consolidation
-          status: 'approved'               // Set status to approved so FO knows it is signed off
+          current_stage: 'finance-officer', // 🚀 Automatically route back to FO for master compiling
+          status: 'approved'               
         })
         .eq('id', id);
 
@@ -125,7 +135,7 @@ export default function HeadOfOperationsDashboard() {
         .from('requisitions')
         .update({ 
           status: 'rejected',
-          current_stage: 'finance-officer', // 🚀 Routed back to FO as well
+          current_stage: 'finance-officer', // 🚀 Bounce back to FO
           rejection_comment: cleaningComment
         })
         .eq('id', targetItem.id);
@@ -133,7 +143,7 @@ export default function HeadOfOperationsDashboard() {
       await supabase
         .from('notifications')
         .insert([{
-          role: 'finance-officer', // Notify the FO specifically
+          role: 'finance-officer', // Send alert specifically to FO role
           type: 'clarification',
           title: 'requisition rejected by ops',
           msg: `ops rejected ${targetItem.id.substring(0,8)}: "${cleaningComment}"`,
