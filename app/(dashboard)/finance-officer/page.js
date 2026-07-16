@@ -111,7 +111,7 @@ export default function FinanceOfficerTerminal() {
 
       if (error) throw error;
 
-      // Update local React state values so they dynamically update to "waiting" instead of vanishing
+      // Update local React state values so they dynamically update without vanishing
       setRequisitions(prev => prev.map(item => 
         item.id === id 
           ? { ...item, status: databaseStatus, current_stage: nextStage } 
@@ -129,10 +129,19 @@ export default function FinanceOfficerTerminal() {
     router.push('/login');
   };
 
-  // Dynamic Regional Live Matrix Metric Accumulators
+  // 🚀 FIXED: Dynamic Regional Live Matrix Metric Accumulators include items advanced to HOOP
   const getRegionalApprovedSum = (slug) => {
     return requisitions
-      .filter(r => r.status?.toLowerCase() === 'approved' && r.location?.toLowerCase().includes(slug.toLowerCase()))
+      .filter(r => {
+        const statusKey = (r.status || "").toLowerCase().trim();
+        const stageKey = (r.current_stage || "").toLowerCase().trim();
+        const matchesLocation = r.location?.toLowerCase().includes(slug.toLowerCase());
+        
+        const isApprovedOrWithOps = statusKey === 'approved' || 
+          (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop'));
+        
+        return isApprovedOrWithOps && matchesLocation;
+      })
       .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
   };
 
@@ -141,17 +150,35 @@ export default function FinanceOfficerTerminal() {
   const bulawayoApprovedTotal = getRegionalApprovedSum('bulawayo');
   
   const grandApprovedTotal = requisitions
-    .filter(r => r.status?.toLowerCase() === 'approved')
+    .filter(r => {
+      const statusKey = (r.status || "").toLowerCase().trim();
+      const stageKey = (r.current_stage || "").toLowerCase().trim();
+      return statusKey === 'approved' || 
+        (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop'));
+    })
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // 🎯 PRESENTATION SAFE: Core Comprehensive Matrix Filter Evaluator Pipeline
+  // 🎯 FIXED PRESENTATION FILTER: Row groups treat HOOP-forwarded items as 'approved' on this terminal
   const filteredRequisitions = requisitions.filter(req => {
-    const matchStatus = statusFilter === 'all' || req.status?.toLowerCase() === statusFilter;
+    const statusKey = (req.status || "").toLowerCase().trim();
+    const stageKey = (req.current_stage || "").toLowerCase().trim();
+
+    let rowTabGroup = 'pending';
+    if (statusKey === 'approved') {
+      rowTabGroup = 'approved';
+    } else if (statusKey === 'rejected') {
+      rowTabGroup = 'rejected';
+    } else if (statusKey === 'pending' && (stageKey === 'head-of-operations' || stageKey === 'head of operations' || stageKey === 'hoop')) {
+      rowTabGroup = 'approved';
+    }
+
+    const matchStatus = statusFilter === 'all' || rowTabGroup === statusFilter;
     const matchRegion = regionFilter === 'all' || req.location?.toLowerCase().includes(regionFilter.toLowerCase());
     const matchSearch = searchQuery.trim() === '' || 
       req.justification?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       req.requester?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       req.id?.toLowerCase().includes(searchQuery.toLowerCase());
+      
     return matchStatus && matchRegion && matchSearch;
   });
 
@@ -242,7 +269,7 @@ export default function FinanceOfficerTerminal() {
                   statusFilter === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
                 }`}
               >
-                {tab}
+                {tab === 'approved' ? 'approved / forwarded' : tab}
               </button>
             ))}
           </div>
@@ -314,6 +341,7 @@ export default function FinanceOfficerTerminal() {
                     
                     return (
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
+                        
                         <td className="px-6 py-4 font-mono font-bold text-[#0747A1] uppercase tracking-wide">
                           {req.id.substring(0, 8)}
                         </td>
@@ -369,17 +397,17 @@ export default function FinanceOfficerTerminal() {
                               </button>
                             </div>
                           ) : (
-                            /* 🚀 FIXED: Status pills are structured based on finality parameters */
+                            /* 🚀 FIXED: Renders matching color pills across the full presentation cycle */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all duration-300 ${
                               statusKey === 'approved' 
                                 ? 'bg-green-50 text-green-700 border-green-200' 
-                                : currentStage === 'head-of-operations' && statusKey === 'pending'
+                                : (currentStage === 'head-of-operations' || currentStage === 'head of operations' || currentStage === 'hoop') && statusKey === 'pending'
                                   ? 'bg-amber-50 text-amber-700 border-amber-200'
                                   : 'bg-red-50 text-red-700 border-red-200'
                             }`}>
                               {statusKey === 'approved' 
                                 ? 'vetted & authorized' 
-                                : currentStage === 'head-of-operations' && statusKey === 'pending'
+                                : (currentStage === 'head-of-operations' || currentStage === 'head of operations' || currentStage === 'hoop') && statusKey === 'pending'
                                   ? 'waiting for operations approval' 
                                   : 'audit rejected'}
                             </span>
