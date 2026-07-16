@@ -7,7 +7,7 @@ import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -45,7 +45,10 @@ export default function ResetPasswordPage() {
     captureHashSession();
   }, [supabase]);
 
-  const handlePasswordUpdate = async () => {
+  const handlePasswordUpdate = async (e) => {
+    // 🚀 FIXED: Prevent any default HTML form triggers from refreshing the window thread
+    if (e) e.preventDefault();
+
     if (!password || !confirmPassword) {
       setError('please complete all required fields.');
       return;
@@ -65,13 +68,17 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
+      // 🔒 FIXED: Await the explicit updateUser promise to finish completely
+      const { data, error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
+      
+      // Successfully set state without context leakage crashing inputs
       setIsSuccess(true);
     } catch (err) {
+      console.error("Password update tracking error:", err.message);
       setError('session expired or invalid token link. please request a new link.');
     } finally {
       setIsLoading(false);
@@ -95,7 +102,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-[420px] py-12">
         
         {!isSuccess ? (
-          <>
+          <form onSubmit={handlePasswordUpdate} className="block w-full">
             {/* Identity Text Layout Block */}
             <div className="flex flex-col mb-8">
               <h1 className="text-3xl font-bold text-[#0A1628] leading-tight tracking-tight lowercase">
@@ -157,26 +164,26 @@ export default function ResetPasswordPage() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
                     disabled={isLoading}
-                    onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
                     className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
                   />
                 </div>
               </div>
 
-              {/* Form Action Completion CTA */}
+              {/* Form Action Completion CTA Button */}
               <div className="pt-2">
-                <div
-                  onClick={!isLoading ? handlePasswordUpdate : undefined}
-                  className={`w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase ${
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className={`w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase border-none focus:outline-none ${
                     isLoading ? 'opacity-60 cursor-not-allowed bg-[#1A2E4A]' : ''
                   }`}
                 >
                   {isLoading ? 'saving password credentials...' : 'save password credentials'}
-                </div>
+                </button>
               </div>
 
             </div>
-          </>
+          </form>
         ) : (
           /* Successful Update Layout Block Template View */
           <div className="flex flex-col text-left py-4 animate-fadeIn">
@@ -188,12 +195,13 @@ export default function ResetPasswordPage() {
               your private profile account password has been successfully saved to the registry database system. you may now log in to the portal workspace dashboard.
             </p>
             <div className="mt-8 pt-4 border-t border-[#E5E7EB]">
-              <div
+              <button
+                type="button"
                 onClick={() => router.push('/login')}
-                className={`inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase`}
+                className="inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm select-none transition-colors cursor-pointer text-center lowercase border-none focus:outline-none"
               >
                 proceed to login
-              </div>
+              </button>
             </div>
           </div>
         )}
