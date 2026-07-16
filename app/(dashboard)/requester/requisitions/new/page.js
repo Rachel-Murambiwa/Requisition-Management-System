@@ -184,7 +184,7 @@ export default function NewRequisitionPage() {
     try {
       const newVat = [...vatCerts];
       for (const file of files) {
-        if (newVat.length >= 3) break;
+        if (newVat.length >= 1) break;
         const uploadedMeta = await uploadBinaryToStorageBucket(file, 'tax clearance cert');
         newVat.push(uploadedMeta);
       }
@@ -260,8 +260,8 @@ export default function NewRequisitionPage() {
         setError('please enter a valid monetary allocation amount greater than zero.');
         return;
       }
-      if (requiresComplianceDocs && (quotes.length !== 3 || vatCerts.length !== 3)) {
-        setError('procurement guidelines state you must supply exactly 3 distinct quotes and 3 matching vat certificates.');
+      if (requiresComplianceDocs && (quotes.length !== 3 || vatCerts.length !== 1)) {
+        setError('procurement guidelines state you must supply exactly 3 distinct quotes and 1 vat certificate.');
         return;
       }
     }
@@ -442,7 +442,7 @@ export default function NewRequisitionPage() {
                     <DollarSign className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
                     <input id="amount-input" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" disabled={isLoading} className="w-full pl-9 pr-4 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all font-sans font-semibold" />
                   </div>
-                  {requiresComplianceDocs && <span className="text-[11px] font-medium text-[#B45309] mt-1 flex items-center gap-1 lowercase">⚠️ amounts exceeding $50 strictly require triple quotation and vat verification matrix rows.</span>}
+                  {requiresComplianceDocs && <span className="text-[11px] font-medium text-[#B45309] mt-1 flex items-center gap-1 lowercase">⚠️ amounts exceeding $50 strictly require three quotations and one vat verification matrix row.</span>}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -481,11 +481,11 @@ export default function NewRequisitionPage() {
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">2. 3 tax clearance certs ({vatCerts.length}/3)</span>
-                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${vatCerts.length >= 3 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
+                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">2. 1 tax clearance cert ({vatCerts.length}/1)</span>
+                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${vatCerts.length >= 1 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
                           <UploadCloud className="w-5 h-5 text-[#0747A1]" />
                           <span className="text-xs text-[#4B5563] font-medium lowercase">select vat clearance files</span>
-                          <input type="file" multiple disabled={isLoading || isFileUploading || vatCerts.length >= 3} onChange={handleVatCertsUpload} className="hidden" accept=".pdf,.png,.jpg" />
+                          <input type="file" multiple disabled={isLoading || isFileUploading || vatCerts.length >= 1} onChange={handleVatCertsUpload} className="hidden" accept=".pdf,.png,.jpg" />
                         </label>
                         <div className="space-y-1.5 mt-1">
                           {vatCerts.map((f, i) => (
