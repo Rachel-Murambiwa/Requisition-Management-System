@@ -31,11 +31,10 @@ export default function FinanceOfficerTerminal() {
     try {
       setLoading(true);
       
-      // 🚀 UPDATED: Fetch requests that are currently in FO review OR have progressed to HOOP review
+      // 🚀 SAFE REVERT: Fetch ALL records to ensure no null stages are accidentally filtered out
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
-        .in('current_stage', ['finance-officer', 'head-of-operations'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -112,7 +111,7 @@ export default function FinanceOfficerTerminal() {
 
       if (error) throw error;
 
-      // 🎉 KEEP IN STATE: Update local React state values so they dynamically update to "waiting" instead of vanishing
+      // Update local React state values so they dynamically update to "waiting" instead of vanishing
       setRequisitions(prev => prev.map(item => 
         item.id === id 
           ? { ...item, status: databaseStatus, current_stage: nextStage } 
@@ -306,6 +305,9 @@ export default function FinanceOfficerTerminal() {
                   {filteredRequisitions.map((req) => {
                     const statusKey = req.status?.toLowerCase() || 'pending';
                     
+                    // 🚀 SAFE RULE: If stage is null or empty, treat it as 'finance-officer' by default
+                    const currentStage = req.current_stage || 'finance-officer';
+
                     // 🛡️ DYNAMIC RULE: Avoids demanding 3 vendor quotations for travel or emergency fund workflows
                     const requiresQuotes = 
                       parseFloat(req.amount) > 50 && 
@@ -344,8 +346,8 @@ export default function FinanceOfficerTerminal() {
                         </td>
 
                         <td className="px-6 py-4 text-right">
-                          {/* 🚀 FIXED: Dynamic Render check. Shows action controls only when request stage is with FO */}
-                          {req.current_stage === 'finance-officer' && statusKey === 'pending' ? (
+                          {/* 🚀 FIXED check: Uses the default-safe stage check */}
+                          {currentStage === 'finance-officer' && statusKey === 'pending' ? (
                             <div className="flex items-center justify-end gap-2">
                               
                               <button 
@@ -376,13 +378,13 @@ export default function FinanceOfficerTerminal() {
                           ) : (
                             /* Shows elegant, non-interactive status pill while awaiting operations or other updates */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide select-none border cursor-pointer transition-all duration-300 transform active:scale-95 will-change-transform hover:-translate-y-1 hover:scale-105 ${
-                              req.current_stage === 'head-of-operations' && statusKey === 'pending'
+                              currentStage === 'head-of-operations' && statusKey === 'pending'
                                 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/70'
                                 : statusKey === 'approved' 
                                   ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100/70 hover:shadow-green-100/50' 
                                   : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70 hover:shadow-red-100/50'
                             }`}>
-                              {req.current_stage === 'head-of-operations' && statusKey === 'pending' 
+                              {currentStage === 'head-of-operations' && statusKey === 'pending' 
                                 ? 'waiting for operations approval' 
                                 : statusKey === 'approved' 
                                   ? 'vetted & authorized' 
