@@ -31,7 +31,7 @@ export default function FinanceOfficerTerminal() {
     try {
       setLoading(true);
       
-      // 🚀 SAFE REVERT: Fetch ALL records to ensure no null stages are accidentally filtered out
+      // Fetch ALL records to ensure no null stages are accidentally filtered out
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -40,7 +40,7 @@ export default function FinanceOfficerTerminal() {
       if (error) throw error;
 
       if (!records || records.length === 0) {
-        // AUTOMATED SANDBOX HYDRO-LOGS: Pre-populates rows matching your structural metrics if DB is empty
+        // AUTOMATED SANDBOX HYDRO-LOGS: Pre-populates rows matching structural metrics if DB is empty
         setRequisitions([
           {
             id: "7B9A2C41",
@@ -144,7 +144,7 @@ export default function FinanceOfficerTerminal() {
     .filter(r => r.status?.toLowerCase() === 'approved')
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // Core Comprehensive Matrix Filter Evaluator Pipeline
+  // 🎯 PRESENTATION SAFE: Core Comprehensive Matrix Filter Evaluator Pipeline
   const filteredRequisitions = requisitions.filter(req => {
     const matchStatus = statusFilter === 'all' || req.status?.toLowerCase() === statusFilter;
     const matchRegion = regionFilter === 'all' || req.location?.toLowerCase().includes(regionFilter.toLowerCase());
@@ -304,11 +304,8 @@ export default function FinanceOfficerTerminal() {
                 <tbody className="divide-y divide-gray-100 font-medium text-gray-700 font-sans">
                   {filteredRequisitions.map((req) => {
                     const statusKey = req.status?.toLowerCase() || 'pending';
-                    
-                    // 🚀 SAFE RULE: If stage is null or empty, treat it as 'finance-officer' by default
                     const currentStage = req.current_stage || 'finance-officer';
 
-                    // 🛡️ DYNAMIC RULE: Avoids demanding 3 vendor quotations for travel or emergency fund workflows
                     const requiresQuotes = 
                       parseFloat(req.amount) > 50 && 
                       req.category !== 'travel & logistics' &&
@@ -317,7 +314,6 @@ export default function FinanceOfficerTerminal() {
                     
                     return (
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
-                        
                         <td className="px-6 py-4 font-mono font-bold text-[#0747A1] uppercase tracking-wide">
                           {req.id.substring(0, 8)}
                         </td>
@@ -346,10 +342,8 @@ export default function FinanceOfficerTerminal() {
                         </td>
 
                         <td className="px-6 py-4 text-right">
-                          {/* 🚀 FIXED check: Uses the default-safe stage check */}
                           {currentStage === 'finance-officer' && statusKey === 'pending' ? (
                             <div className="flex items-center justify-end gap-2">
-                              
                               <button 
                                 onClick={() => router.push(`/finance-officer/review/${req.id}`)}
                                 className="p-1.5 border border-gray-200 text-gray-400 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md cursor-pointer transition-all"
@@ -373,21 +367,20 @@ export default function FinanceOfficerTerminal() {
                               >
                                 {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                               </button>
-
                             </div>
                           ) : (
-                            /* Shows elegant, non-interactive status pill while awaiting operations or other updates */
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide select-none border cursor-pointer transition-all duration-300 transform active:scale-95 will-change-transform hover:-translate-y-1 hover:scale-105 ${
-                              currentStage === 'head-of-operations' && statusKey === 'pending'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/70'
-                                : statusKey === 'approved' 
-                                  ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100/70 hover:shadow-green-100/50' 
-                                  : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70 hover:shadow-red-100/50'
+                            /* 🚀 FIXED: Status pills are structured based on finality parameters */
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all duration-300 ${
+                              statusKey === 'approved' 
+                                ? 'bg-green-50 text-green-700 border-green-200' 
+                                : currentStage === 'head-of-operations' && statusKey === 'pending'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-red-50 text-red-700 border-red-200'
                             }`}>
-                              {currentStage === 'head-of-operations' && statusKey === 'pending' 
-                                ? 'waiting for operations approval' 
-                                : statusKey === 'approved' 
-                                  ? 'vetted & authorized' 
+                              {statusKey === 'approved' 
+                                ? 'vetted & authorized' 
+                                : currentStage === 'head-of-operations' && statusKey === 'pending'
+                                  ? 'waiting for operations approval' 
                                   : 'audit rejected'}
                             </span>
                           )}
