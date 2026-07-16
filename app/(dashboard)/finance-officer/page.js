@@ -31,7 +31,6 @@ export default function FinanceOfficerTerminal() {
     try {
       setLoading(true);
       
-      // Fetch ALL records to ensure no null stages are accidentally filtered out
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -40,7 +39,6 @@ export default function FinanceOfficerTerminal() {
       if (error) throw error;
 
       if (!records || records.length === 0) {
-        // AUTOMATED SANDBOX HYDRO-LOGS: Pre-populates rows matching structural metrics if DB is empty
         setRequisitions([
           {
             id: "7B9A2C41",
@@ -64,18 +62,6 @@ export default function FinanceOfficerTerminal() {
             payment_method: "petty cash disbursement",
             status: "pending",
             created_at: new Date(Date.now() - 3600000).toISOString(),
-            current_stage: "finance-officer"
-          },
-          {
-            id: "9E5F33B1",
-            requester: "nkosi ndlovu",
-            location: "vic falls hub",
-            justification: "emergency perimeter security gate lock configuration alignment",
-            category: "miscellaneous emergency funds",
-            amount: 115.00,
-            payment_method: "direct bank transfer",
-            status: "approved",
-            created_at: new Date(Date.now() - 86400000).toISOString(),
             current_stage: "finance-officer"
           }
         ]);
@@ -129,7 +115,7 @@ export default function FinanceOfficerTerminal() {
     router.push('/login');
   };
 
-  // 🚀 FIXED: Dynamic Regional Live Matrix Metric Accumulators include items advanced to HOOP
+  // Dynamic Regional Live Matrix Metric Accumulators include items advanced to HOOP
   const getRegionalApprovedSum = (slug) => {
     return requisitions
       .filter(r => {
@@ -158,7 +144,7 @@ export default function FinanceOfficerTerminal() {
     })
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  // 🎯 FIXED PRESENTATION FILTER: Row groups treat HOOP-forwarded items as 'approved' on this terminal
+  // Filter treats HOOP-forwarded items as 'approved' under this specific dashboard view
   const filteredRequisitions = requisitions.filter(req => {
     const statusKey = (req.status || "").toLowerCase().trim();
     const stageKey = (req.current_stage || "").toLowerCase().trim();
@@ -185,7 +171,6 @@ export default function FinanceOfficerTerminal() {
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-20">
       
-      {/* Navbar View Layout Frame */}
       <nav className="w-full bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
@@ -212,10 +197,8 @@ export default function FinanceOfficerTerminal() {
         </div>
       </nav>
 
-      {/* Main Layout Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         
-        {/* Upper Title Description Row Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start mb-10">
           <div className="lg:col-span-2 space-y-4 pt-2">
             <h1 className="text-4xl font-black text-[#0A1628] tracking-tight lowercase">incoming review pool</h1>
@@ -230,7 +213,6 @@ export default function FinanceOfficerTerminal() {
             </button>
           </div>
 
-          {/* SIDEBAR METRICS WIDGET */}
           <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm space-y-4">
             <div className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider border-b border-gray-100 pb-2">
               approved manifest total
@@ -256,10 +238,7 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* CONTROLS BAR: Tabs on left with search/region selectors on right */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-sm mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          
-          {/* Left Side Filter Tabs */}
           <div className="flex bg-gray-100/80 p-1 rounded-lg text-xs font-bold select-none lowercase self-start">
             {['all', 'pending', 'approved', 'rejected'].map((tab) => (
               <button
@@ -274,7 +253,6 @@ export default function FinanceOfficerTerminal() {
             ))}
           </div>
 
-          {/* Right Side Settings Dropdown + Input Filters */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <select
@@ -303,7 +281,6 @@ export default function FinanceOfficerTerminal() {
           </div>
         </div>
 
-        {/* Core Requisitions Historical Table Matrix */}
         <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase">
@@ -343,7 +320,7 @@ export default function FinanceOfficerTerminal() {
                       <tr key={req.id} className="hover:bg-gray-50/40 transition-colors">
                         
                         <td className="px-6 py-4 font-mono font-bold text-[#0747A1] uppercase tracking-wide">
-                          {req.id.substring(0, 8)}
+                          {req.id.startsWith("REQ-") ? req.id : `REQ-${req.id.substring(0,4)}`}
                         </td>
 
                         <td className="px-6 py-4 font-bold text-gray-900 lowercase">
@@ -397,7 +374,6 @@ export default function FinanceOfficerTerminal() {
                               </button>
                             </div>
                           ) : (
-                            /* 🚀 FIXED: Renders matching color pills across the full presentation cycle */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all duration-300 ${
                               statusKey === 'approved' 
                                 ? 'bg-green-50 text-green-700 border-green-200' 
