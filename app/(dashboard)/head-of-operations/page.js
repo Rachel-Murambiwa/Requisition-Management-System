@@ -55,7 +55,7 @@ export default function HeadOfOperationsDashboard() {
     try {
       setLoading(true);
       
-      // 🚀 SAFE REVERT: Fetch all records from database to protect against empty/null stage values
+      // 🚀 Step 1: Pull everything from the database
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -66,23 +66,28 @@ export default function HeadOfOperationsDashboard() {
       if (!data || data.length === 0) {
         setQueue(FORWARDED_AUDIT_QUEUE);
       } else {
-        // Filter in-memory: Display records that match HOOP stage variations (case-insensitive & space-friendly)
-        const liveHOOPRequests = data.filter(req => {
-          if (!req.current_stage) return false;
-          const stageNormalized = req.current_stage.toLowerCase().trim();
+        // 🚀 Step 2: Extract any database rows that are active or pending in the system
+        // This acts as a net to catch REQ-2026 and any other running test rows instantly!
+        const liveDatabaseRequests = data.filter(req => {
+          const statusNormalized = (req.status || "").toLowerCase().trim();
+          const stageNormalized = (req.current_stage || "").toLowerCase().trim();
+          
           return (
+            statusNormalized === 'pending' || 
             stageNormalized === 'head-of-operations' ||
-            stageNormalized === 'head of operations' ||
-            stageNormalized === 'head_of_operations' ||
-            stageNormalized === 'hoop'
+            stageNormalized === 'head of operations'
           );
         });
 
-        // Failsafe: Fall back to sandbox dummy cards if no live requests are currently with HOOP
-        if (liveHOOPRequests.length === 0) {
+        // 🚀 Step 3: Failsafe union merging so your fallback layout metrics remain populated
+        if (liveDatabaseRequests.length === 0) {
           setQueue(FORWARDED_AUDIT_QUEUE);
         } else {
-          setQueue(liveHOOPRequests);
+          // Combine live database entries at the top, and put mock items underneath so charts look full!
+          const uniqueMockItems = FORWARDED_AUDIT_QUEUE.filter(
+            mock => !liveDatabaseRequests.some(live => live.id === mock.id)
+          );
+          setQueue([...liveDatabaseRequests, ...uniqueMockItems]);
         }
       }
     } catch (err) {
@@ -108,7 +113,7 @@ export default function HeadOfOperationsDashboard() {
       const { error } = await supabase
         .from('requisitions')
         .update({ 
-          current_stage: 'finance-officer', // 🚀 Automatically route back to FO for master compiling
+          current_stage: 'finance-officer', 
           status: 'approved'               
         })
         .eq('id', id);
@@ -142,7 +147,7 @@ export default function HeadOfOperationsDashboard() {
         .from('requisitions')
         .update({ 
           status: 'rejected',
-          current_stage: 'finance-officer', // 🚀 Bounce back to FO
+          current_stage: 'finance-officer', 
           rejection_comment: cleaningComment
         })
         .eq('id', targetItem.id);
@@ -150,7 +155,7 @@ export default function HeadOfOperationsDashboard() {
       await supabase
         .from('notifications')
         .insert([{
-          role: 'finance-officer', // Send alert specifically to FO role
+          role: 'finance-officer', 
           type: 'clarification',
           title: 'requisition rejected by ops',
           msg: `ops rejected ${targetItem.id.substring(0,8)}: "${cleaningComment}"`,
@@ -315,55 +320,60 @@ export default function HeadOfOperationsDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5E7EB] text-[#111827]">
-                  {filteredQueue.map((req) => (
-                    <tr key={req.id} className="hover:bg-gray-50/40 transition-colors font-sans">
-                      <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1D4ED8] uppercase">{req.id.substring(0,8)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap"><span className="text-xs font-bold text-[#1D4ED8] bg-[#EFF6FF] px-2 py-0.5 rounded lowercase">{req.location}</span></td>
-                      <td className="px-6 py-4 whitespace-nowrap lowercase text-[#4B5563] font-medium">{req.requester}</td>
-                      <td className="px-6 py-4 max-w-xs sm:max-w-xl">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description || req.justification}</span>
-                          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#9CA3AF] mt-0.5">{req.category}</span>
-                          {req.status === 'rejected' && req.rejection_comment && (
-                            <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 inline-block lowercase flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3 shrink-0" /> reason: {req.rejection_comment}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
-                        {req.status === 'pending' ? (
-                          <div className="flex items-center justify-end gap-2 select-none">
-                            <button 
-                              onClick={() => openRejectionModal(req)} 
-                              className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none cursor-pointer"
-                              title="quick reject"
-                            >
-                              <ThumbsDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              onClick={() => handleApprove(req.id)} 
-                              className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white border-none rounded-md shadow-sm font-bold transition-colors focus:outline-none cursor-pointer"
-                              title="quick approve"
-                            >
-                              <ThumbsUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              onClick={() => router.push(`/head-of-operations/review/${req.id}`)}
-                              className="p-1.5 border border-gray-200 text-gray-400 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md transition-colors cursor-pointer focus:outline-none shadow-sm"
-                              title="view full attachments"
-                            >
-                              <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
-                            </button>
+                  {filteredQueue.map((req) => {
+                    const isMockItem = req.id.startsWith("REQ-00");
+                    const displayId = isMockItem ? req.id : `REQ-${req.id.substring(0,4)}`;
+                    
+                    return (
+                      <tr key={req.id} className="hover:bg-gray-50/40 transition-colors font-sans">
+                        <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1D4ED8] uppercase">{displayId}</td>
+                        <td className="px-6 py-4 whitespace-nowrap"><span className="text-xs font-bold text-[#1D4ED8] bg-[#EFF6FF] px-2 py-0.5 rounded lowercase">{req.location}</span></td>
+                        <td className="px-6 py-4 whitespace-nowrap lowercase text-[#4B5563] font-medium">{req.requester}</td>
+                        <td className="px-6 py-4 max-w-xs sm:max-w-xl">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-[#0A1628] lowercase line-clamp-1">{req.description || req.justification}</span>
+                            <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#9CA3AF] mt-0.5">{req.category}</span>
+                            {req.status === 'rejected' && req.rejection_comment && (
+                              <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 inline-block lowercase flex items-center gap-1">
+                                <MessageSquare className="w-3 h-3 shrink-0" /> reason: {req.rejection_comment}
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md ${req.status === 'approved' ? 'text-[#16A34A] bg-green-50 border border-green-100' : 'text-[#991B1B] bg-red-50 border border-red-100'}`}>{req.status === 'approved' ? 'authorized signature' : 'rejected audit'}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
+                          {req.status === 'pending' ? (
+                            <div className="flex items-center justify-end gap-2 select-none">
+                              <button 
+                                onClick={() => openRejectionModal(req)} 
+                                className="p-1.5 bg-transparent border border-red-200 text-[#991B1B] hover:bg-red-50 rounded-md shadow-sm transition-colors focus:outline-none cursor-pointer"
+                                title="quick reject"
+                              >
+                                <ThumbsDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={() => handleApprove(req.id)} 
+                                className="p-1.5 bg-[#16A34A] hover:bg-[#15803D] text-white border-none rounded-md shadow-sm font-bold transition-colors focus:outline-none cursor-pointer"
+                                title="quick approve"
+                              >
+                                <ThumbsUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={() => router.push(`/head-of-operations/review/${req.id}`)}
+                                className="p-1.5 border border-gray-200 text-gray-400 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded-md transition-colors cursor-pointer focus:outline-none shadow-sm"
+                                title="view full attachments"
+                              >
+                                <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md ${req.status === 'approved' ? 'text-[#16A34A] bg-green-50 border border-green-100' : 'text-[#991B1B] bg-red-50 border border-red-100'}`}>{req.status === 'approved' ? 'authorized signature' : 'rejected audit'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
