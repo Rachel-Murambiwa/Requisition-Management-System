@@ -276,7 +276,7 @@ export default function HeadOfOperationsDashboard() {
                     <option value="harare">harare</option>
                     <option value="bulawayo">bulawayo</option>
                     <option value="vic falls">vic falls</option>
-                  </</select>
+                  </select>
                 </div>
                 <div className="relative flex items-center w-full sm:max-w-xs">
                   <Search className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
