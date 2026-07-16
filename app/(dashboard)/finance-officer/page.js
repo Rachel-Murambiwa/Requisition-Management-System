@@ -26,13 +26,16 @@ export default function FinanceOfficerTerminal() {
   const [regionFilter, setRegionFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Hydrate full pending and historically logged pipeline requests on load
+  // Hydrate only requests currently in the FO stage on load
   async function loadCentralAuditQueue() {
     try {
       setLoading(true);
+      
+      // 🚀 AUTOMATED PIPELINE FILTER: Strictly queries records awaiting FO audit
       const { data: records, error } = await supabase
         .from('requisitions')
         .select('*')
+        .eq('current_stage', 'finance-officer')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -88,19 +91,29 @@ export default function FinanceOfficerTerminal() {
     loadCentralAuditQueue();
   }, [supabase]);
 
-  // Execute immediate state transitions directly against the target database record
+  // 🚀 AUTOMATED STATE TRANSITION CONTROLLER
   const handleUpdateStatus = async (id, targetStatus) => {
     setProcessingId(id);
     try {
+      // If FO approves, hand over stage to HOOP and set status to pending. 
+      // If FO rejects, keep stage on FO and update status to rejected.
+      const isApproving = targetStatus === 'approved';
+      const nextStage = isApproving ? 'head-of-operations' : 'finance-officer';
+      const databaseStatus = isApproving ? 'pending' : 'rejected';
+
       const { error } = await supabase
         .from('requisitions')
-        .update({ status: targetStatus })
+        .update({ 
+          status: databaseStatus,
+          current_stage: nextStage 
+        })
         .eq('id', id);
 
       if (error) throw error;
 
+      // Update local state queue or transition them off the FO dashboard queue
       setRequisitions(prev => prev.map(item => 
-        item.id === id ? { ...item, status: targetStatus } : item
+        item.id === id ? { ...item, status: databaseStatus, current_stage: nextStage } : item
       ));
     } catch (err) {
       alert(`Pipeline transaction faulted: ${err.message}`);
