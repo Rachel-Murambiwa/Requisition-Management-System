@@ -23,7 +23,7 @@ import {
   MessageSquare,
   X,
   Loader2,
-  ArrowUpRight // ✨ Kept for custom routing sheet navigation
+  ArrowUpRight
 } from 'lucide-react';
 
 const FORWARDED_AUDIT_QUEUE = [
@@ -55,7 +55,7 @@ export default function HeadOfOperationsDashboard() {
     try {
       setLoading(true);
       
-      // Keeps rows strictly filtered for their turn in the pipeline
+      // 🚀 FIXED: Fetch only requisitions that have successfully cleared FO vetting
       const { data, error } = await supabase
         .from('requisitions')
         .select('*')
@@ -85,20 +85,21 @@ export default function HeadOfOperationsDashboard() {
     router.push('/login');
   };
 
-  // 👍 APPROVED HANDLER: Advance stage status up to the country manager desk
+  // 👍 APPROVED HANDLER: Route the vetted request back to the Finance Officer
   const handleApprove = async (id) => {
     try {
       const { error } = await supabase
         .from('requisitions')
         .update({ 
-          current_stage: 'country-manager',
-          status: 'pending' 
+          current_stage: 'finance-officer', // 🚀 Route back to FO for compiling/manifest consolidation
+          status: 'approved'               // Set status to approved so FO knows it is signed off
         })
         .eq('id', id);
 
       if (error) throw error;
 
-      setQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved' } : item));
+      // Update local state queue
+      setQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved', current_stage: 'finance-officer' } : item));
     } catch (err) {
       console.error("Approval transaction fault:", err.message);
     }
@@ -111,7 +112,7 @@ export default function HeadOfOperationsDashboard() {
     setIsModalOpen(true);
   };
 
-  // 🚀 REJECTION CONFIRMATION: Bounce back to finance-officer
+  // 🚀 REJECTION CONFIRMATION: Bounce back to finance-officer with comment logs
   const handleConfirmRejection = async (e) => {
     e.preventDefault();
     if (!commentText.trim() || !targetItem) return;
@@ -124,7 +125,7 @@ export default function HeadOfOperationsDashboard() {
         .from('requisitions')
         .update({ 
           status: 'rejected',
-          current_stage: 'finance-officer',
+          current_stage: 'finance-officer', // 🚀 Routed back to FO as well
           rejection_comment: cleaningComment
         })
         .eq('id', targetItem.id);
@@ -132,18 +133,18 @@ export default function HeadOfOperationsDashboard() {
       await supabase
         .from('notifications')
         .insert([{
-          role: 'requester',
+          role: 'finance-officer', // Notify the FO specifically
           type: 'clarification',
-          title: 'requisition rejected',
+          title: 'requisition rejected by ops',
           msg: `ops rejected ${targetItem.id.substring(0,8)}: "${cleaningComment}"`,
           time_label: 'just now',
-          link: `/requester`,
+          link: `/finance-officer`,
           read: false
         }]);
 
       setQueue(prev => prev.map(item => 
         item.id === targetItem.id 
-          ? { ...item, status: 'rejected', rejection_comment: cleaningComment } 
+          ? { ...item, status: 'rejected', current_stage: 'finance-officer', rejection_comment: cleaningComment } 
           : item
       ));
 
@@ -275,7 +276,7 @@ export default function HeadOfOperationsDashboard() {
                     <option value="harare">harare</option>
                     <option value="bulawayo">bulawayo</option>
                     <option value="vic falls">vic falls</option>
-                  </select>
+                  </</select>
                 </div>
                 <div className="relative flex items-center w-full sm:max-w-xs">
                   <Search className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
@@ -315,7 +316,6 @@ export default function HeadOfOperationsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap font-bold text-[#0A1628] font-mono">${parseFloat(req.amount || 0).toFixed(2)}</td>
                       
-                      {/* ✨ BOTH CONTROLS COMBINED: Restored instant action panels + the navigation link arrow together */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
                         {req.status === 'pending' ? (
                           <div className="flex items-center justify-end gap-2 select-none">
@@ -354,7 +354,6 @@ export default function HeadOfOperationsDashboard() {
         </main>
       ) : (
         <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 print:p-0 animate-fadeIn">
-          {/* Analytics Section Code remains unchanged */}
           <div className="flex items-center justify-between mb-8 print:hidden">
             <div>
               <h1 className="text-xl font-bold text-[#0A1628] tracking-tight lowercase">executive system compilation</h1>
