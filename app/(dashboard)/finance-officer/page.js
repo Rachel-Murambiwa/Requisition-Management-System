@@ -155,7 +155,6 @@ export default function FinanceOfficerTerminal() {
 
     let rowTabGroup = 'pending';
     
-    // 🚀 CLEAN PIPELINE: Fully approved items go to approved, any type of pending stays in pending
     if (statusKey.includes('approved') || statusKey === 'approved') {
       rowTabGroup = 'approved';
     } else if (statusKey.includes('rejected') || statusKey === 'rejected') {
@@ -381,6 +380,7 @@ export default function FinanceOfficerTerminal() {
                               </button>
                             </div>
                           ) : (
+                            /* 🚀 UPDATED: "vetted & authorized" changed to say "approved" */
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all duration-300 ${
                               statusKey === 'approved' 
                                 ? 'bg-green-50 text-green-700 border-green-200' 
@@ -389,7 +389,7 @@ export default function FinanceOfficerTerminal() {
                                   : 'bg-red-50 text-red-700 border-red-200'
                             }`}>
                               {statusKey === 'approved' 
-                                ? 'vetted & authorized' 
+                                ? 'approved' 
                                 : isOperationsStage(currentStage) && statusKey === 'pending'
                                   ? 'waiting for operations approval' 
                                   : 'audit rejected'}
