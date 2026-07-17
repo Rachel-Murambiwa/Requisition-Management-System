@@ -17,50 +17,37 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [verifyingLink, setVerifyingLink] = useState(true);
 
-  // 📡 AUTOMATED LINK EXCHANGE: Swaps the incoming invite token_hash for an active live user session
+  // Store tokens in state so they don't get lost or prematurely consumed
+  const [tokenParams, setTokenParams] = useState({ tokenHash: null, type: 'invite' });
+
+  // 📡 LINK CAPTURE: Securely extract URL credentials on load without burning them yet
   useEffect(() => {
-    async function handleEmailInviteVerification() {
-      if (typeof window !== 'undefined') {
-        try {
-          setVerifyingLink(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenHash = urlParams.get('token_hash');
+        const type = urlParams.get('type') || 'invite';
+
+        if (tokenHash) {
+          setTokenParams({ tokenHash, type });
+        } else {
+          // Check hash parameters fallback
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
           
-          // Parse out standard query strings sent by Supabase invite emails
-          const urlParams = new URLSearchParams(window.location.search);
-          const tokenHash = urlParams.get('token_hash');
-          const type = urlParams.get('type') || 'invite'; // Defaults to invite workflow
-
-          if (tokenHash) {
-            // 🚀 AUTOMATED ACTIVATE: Exchange confirmation hash to fully verify and log in the user
-            const { error: verifyError } = await supabase.auth.verifyOtp({
-              token_hash: tokenHash,
-              type: type,
-            });
-            
-            if (verifyError) throw verifyError;
-          } else {
-            // Fallback: If your email template routes tokens through a hash block instead
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
-
-            if (accessToken && refreshToken) {
-              const { error: sessionError } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-              if (sessionError) throw sessionError;
-            }
+          if (accessToken && refreshToken) {
+            setTokenParams({ accessToken, refreshToken, type: 'recovery' });
           }
-        } catch (err) {
-          console.error("Link verification pipeline fault:", err.message);
-          setError("the invitation link is invalid or has expired. please ask your administrator for a new invite.");
-        } finally {
-          setVerifyingLink(false);
         }
+      } catch (err) {
+        console.error("Link capture error:", err.message);
+        setError("could not parse invitation link credentials.");
+      } finally {
+        setVerifyingLink(false);
       }
     }
-    handleEmailInviteVerification();
-  }, [supabase]);
+  }, []);
 
   const handlePasswordUpdate = async (e) => {
     if (e) e.preventDefault();
@@ -84,17 +71,31 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 🔒 SECURE SAVE: Now that the user is verified and authenticated, this will successfully write to the DB
+      // 1. Establish the session first right before saving the password
+      if (tokenParams.tokenHash) {
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: tokenParams.tokenHash,
+          type: tokenParams.type,
+        });
+        if (verifyError) throw verifyError;
+      } else if (tokenParams.accessToken && tokenParams.refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: tokenParams.accessToken,
+          refresh_token: tokenParams.refreshToken,
+        });
+        if (sessionError) throw sessionError;
+      }
+
+      // 2. 🔒 SECURE SAVE: Now that we have verified/refreshed the session, write the password
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
       
-      // 🚀 THE MAGIC FIX: Explicitly sign out of client session AND blast the local cookies
+      // 3. Clear memory and browser cookie state to prevent post-login clash
       await supabase.auth.signOut();
       
-      // Force programmatic removal of any stubborn Supabase cookies remaining on the document domain
       if (typeof document !== 'undefined') {
         document.cookie.split(";").forEach((c) => {
           document.cookie = c
@@ -106,7 +107,7 @@ export default function ResetPasswordPage() {
       setIsSuccess(true);
     } catch (err) {
       console.error("Password update tracking error:", err.message);
-      setError('unable to save password. your authentication context may have timed out.');
+      setError('authentication link expired or invalid. please request a new invitation from your administrator.');
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +127,7 @@ export default function ResetPasswordPage() {
         {verifyingLink ? (
           <div className="flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase py-12">
             <Loader2 className="w-6 h-6 text-[#1D4ED8] animate-spin" />
-            <span>verifying security invitation link...</span>
+            <span>preparing verification context...</span>
           </div>
         ) : !isSuccess ? (
           <form onSubmit={handlePasswordUpdate} className="block w-full">
@@ -214,7 +215,7 @@ export default function ResetPasswordPage() {
               <button
                 type="button"
                 onClick={() => {
-                  router.refresh(); // Cleans up router cache
+                  router.refresh();
                   setTimeout(() => {
                     router.push('/login');
                   }, 100);
