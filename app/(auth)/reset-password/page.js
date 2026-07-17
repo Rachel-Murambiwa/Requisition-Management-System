@@ -91,8 +91,18 @@ export default function ResetPasswordPage() {
 
       if (updateError) throw updateError;
       
-      // Clear out the browser auth cookies so they can perform a completely clean, fresh login next
+      // 🚀 THE MAGIC FIX: Explicitly sign out of client session AND blast the local cookies
       await supabase.auth.signOut();
+      
+      // Force programmatic removal of any stubborn Supabase cookies remaining on the document domain
+      if (typeof document !== 'undefined') {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      }
+
       setIsSuccess(true);
     } catch (err) {
       console.error("Password update tracking error:", err.message);
@@ -155,7 +165,7 @@ export default function ResetPasswordPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={isLoading}
-                    className="absolute right-3 text-[#9CA3AF] hover:text-[#4B5563] focus:outline-none"
+                    className="absolute right-3 text-[#9CA3AF] hover:text-[#4B5563] focus:outline-none bg-transparent border-none cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -203,7 +213,12 @@ export default function ResetPasswordPage() {
             <div className="mt-8 pt-4 border-t border-[#E5E7EB]">
               <button
                 type="button"
-                onClick={() => router.push('/login')}
+                onClick={() => {
+                  router.refresh(); // Cleans up router cache
+                  setTimeout(() => {
+                    router.push('/login');
+                  }, 100);
+                }}
                 className="inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer text-center lowercase border-none focus:outline-none"
               >
                 proceed to login
