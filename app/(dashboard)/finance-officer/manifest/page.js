@@ -139,7 +139,7 @@ export default function FinanceManifestCompilationPage() {
             </button>
             <button 
               onClick={handleForwardToManager}
-              disabled={loading || items.length === 0 || champions || isForwarding}
+              disabled={loading || items.length === 0 || isForwarding}
               className="inline-flex items-center gap-2 bg-[#0747A1] hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors cursor-pointer select-none disabled:opacity-40 border-none"
             >
               {isForwarding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckSquare className="w-3.5 h-3.5" />}
