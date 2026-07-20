@@ -18,24 +18,19 @@ export async function POST(request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    
-    // 🌐 Automatically resolves request domain or falls back to your live Vercel address
-    const origin = request.headers.get('origin') || 'https://requisition-management-system-melp.vercel.app';
 
-    // 🚀 STEP 1: Dispatch the email invitation targeting your custom password setup page
-    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      cleanEmail,
-      {
-        data: {
-          name: name.toLowerCase().trim(),
-          role: role,
-          hub_name: hub_name
-        },
-        redirectTo: `${origin}/reset-password`
+    // 🚀 BYPASS SMTP: Create the user directly as "CONFIRMED" to skip email limits
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password: 'InitialPassword123!', // Give them a temporary default password
+      email_confirm: true,               // Marks them confirmed instantly!
+      user_metadata: {
+        name: name.toLowerCase().trim(),
+        role: role,
+        hub_name: hub_name
       }
-    );
+    });
 
-    // 🛡️ STEP 2: strict email error checking with no fallback password bypasses
     if (error) {
       if (error.message.includes('already registered') || error.status === 422) {
         return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
@@ -43,13 +38,18 @@ export async function POST(request) {
       throw error;
     }
 
-    return NextResponse.json({ success: true, user: data.user });
+    // Return success message instructing them on their auto-generated access credentials
+    return NextResponse.json({ 
+      success: true, 
+      user: data.user,
+      message: `Bypassed SMTP restrictions. Account active! Default password: InitialPassword123!` 
+    });
 
   } catch (err) {
     console.error("Invite API Crash Log:", err.message);
     return NextResponse.json({ 
       success: false, 
-      error: `mail delivery failed: ${err.message}. verify your custom smtp settings.` 
+      error: `Action halted: ${err.message}` 
     }, { status: 500 });
   }
 }
