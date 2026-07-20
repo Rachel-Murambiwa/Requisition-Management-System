@@ -1,28 +1,67 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 
-export async function middleware(req) {
-  // Create a base response stream so cookie headers are preserved
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+export async function middleware(request) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
 
-  // Refresh and validate the active authentication session tokens
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  const path = req.nextUrl.pathname;
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+          response = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        },
+      },
+    }
+  );
 
   // 1. AUTHENTICATION PROTECTION GUARD
+  const { data: { session } } = await supabase.auth.getSession();
+  const path = request.nextUrl.pathname;
+
   if (!session) {
     if (path !== '/login') {
-      const loginUrl = new URL('/login', req.url);
-      return NextResponse.redirect(loginUrl);
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-    return res;
+    return response;
   }
 
-  // 2. FETCH ROLE WITH USER METADATA FALLBACK
-  let userRole = session?.user?.user_metadata?.role;
+  // Prevent logged-in users from seeing the login screen again
+  if (path === '/login') {
+    let fallbackRole = session?.user?.user_metadata?.role || 'requester';
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+      if (profile?.role) fallbackRole = profile.role;
+    } catch (e) {}
+    
+    const roleRedirects = {
+      'requester': '/requester',
+      'finance-officer': '/finance-officer',
+      'head-of-operations': '/head-of-operations',
+      'country-manager': '/country-manager',
+      'admin': '/admin',
+    };
+    return NextResponse.redirect(new URL(roleRedirects[fallbackRole] || '/unauthorised', request.url));
+  }
 
+  // 2. FETCH ROLE
+  let userRole = session?.user?.user_metadata?.role;
   try {
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -37,39 +76,31 @@ export async function middleware(req) {
     console.error("Middleware DB profile bypass:", e);
   }
 
-  // If role lookup completely fails, fallback to client-side layout router handlers
-  if (!userRole) {
-    return res;
-  }
+  if (!userRole) return response;
 
   // 3. ISOLATION ROUTE MATRIX
-  // Instead of rewriting paths manually, we generate pristine URLs using req.url context
   if (path.startsWith('/requester') && userRole !== 'requester') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+    return NextResponse.redirect(new URL('/unauthorised', request.url));
   }
-
   if (path.startsWith('/finance-officer') && userRole !== 'finance-officer') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+    return NextResponse.redirect(new URL('/unauthorised', request.url));
   }
-
   if (path.startsWith('/admin') && userRole !== 'admin') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+    return NextResponse.redirect(new URL('/unauthorised', request.url));
   }
-
   if (path.startsWith('/head-of-operations') && userRole !== 'head-of-operations') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+    return NextResponse.redirect(new URL('/unauthorised', request.url));
   }
-
   if (path.startsWith('/country-manager') && userRole !== 'country-manager') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+    return NextResponse.redirect(new URL('/unauthorised', request.url));
   }
 
-  // Crucial: Return the original response stream containing the refreshed cookie tokens!
-  return res;
+  return response;
 }
 
 export const config = {
   matcher: [
+    '/login', // Explicitly intercept login to catch session bindings cleanly
     '/admin/:path*',
     '/country-manager/:path*',
     '/finance-officer/:path*',
