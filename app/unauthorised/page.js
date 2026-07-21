@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { 
   ShieldAlert, 
-  ArrowRight, 
   Clock, 
   Key, 
   HelpCircle,
@@ -12,6 +13,27 @@ import {
 
 export default function UnauthorisedPage() {
   const router = useRouter();
+  const supabase = createClient();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleReturnToLogin = async () => {
+    try {
+      setIsLoggingOut(true);
+      // 1. Flush active session tokens/cookies completely
+      await supabase.auth.signOut();
+      
+      // 2. Force Next.js router cache to refresh cookie context
+      router.refresh();
+
+      // 3. Navigate cleanly to the login screen without middleware redirect loops
+      router.push('/login');
+    } catch (err) {
+      console.error("Signout error:", err);
+      router.push('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased flex flex-col items-center justify-center p-4">
@@ -79,10 +101,12 @@ export default function UnauthorisedPage() {
         {/* Action Button Row */}
         <div className="pt-2 space-y-2.5">
           <button
-            onClick={() => router.push('/login')}
-            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0747A1] hover:opacity-95 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm border-none cursor-pointer transition-opacity"
+            onClick={handleReturnToLogin}
+            disabled={isLoggingOut}
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0747A1] hover:opacity-95 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm border-none cursor-pointer transition-opacity disabled:opacity-50"
           >
-            <LogIn className="w-3.5 h-3.5" /> return to login portal
+            <LogIn className="w-3.5 h-3.5" /> 
+            {isLoggingOut ? 'clearing session...' : 'return to login portal'}
           </button>
           
           <div className="text-[10px] text-gray-400 font-bold lowercase">
