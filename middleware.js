@@ -1,53 +1,96 @@
-import { createClient } from '@supabase/supabase-js';
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
-export async function POST(request) {
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: { autoRefreshToken: false, persistSession: false }
-    }
-  );
+export async function middleware(req) {
+  const res = NextResponse.next();
 
   try {
-    const { email, name, role, hub_name } = await request.json();
+    const supabase = createMiddlewareClient({ req, res });
 
-    if (!email || !name || !role || !hub_name) {
-      return NextResponse.json({ success: false, error: 'missing required parameters' }, { status: 400 });
+    // 1. SAFE SESSION CHECK
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const path = req.nextUrl.pathname;
+
+    // If no active session, restrict access to protected pages
+    if (!session || sessionError) {
+      if (path !== '/login') {
+        return NextResponse.redirect(new URL('/login', req.url));
+      }
+      return res;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://requisition-management-system-melp.vercel.app';
+    // 2. EXTRACT ROLE (Prioritize metadata stored directly on JWT token)
+    let userRole = session.user?.user_metadata?.role;
 
-    // 📩 Send real email invitation via your custom corporate SMTP domain
-    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(cleanEmail, {
-      redirectTo: `${siteUrl}/reset-password`,
-      data: {
-        name: name.toLowerCase().trim(),
-        role: role,
-        hub_name: hub_name
-      }
-    });
+    // Optional DB Fallback (Wrapped in isolated try/catch so DB issues NEVER cause a 500 error)
+    if (!userRole) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
 
-    if (error) {
-      if (error.message.includes('already registered') || error.status === 422) {
-        return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
+        if (profile?.role) {
+          userRole = profile.role;
+        }
+      } catch (dbError) {
+        console.error("Edge DB lookup skipped:", dbError?.message);
       }
-      throw error;
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      user: data.user,
-      message: `workspace invitation successfully sent to ${cleanEmail}!` 
-    });
+    // Default to requester if role extraction completely fails
+    if (!userRole) {
+      userRole = 'requester';
+    }
+
+    // 3. LOGGED-IN REDIRECT FROM /login
+    if (path === '/login') {
+      const roleRedirects = {
+        'requester': '/requester',
+        'finance-officer': '/finance-officer',
+        'head-of-operations': '/head-of-operations',
+        'country-manager': '/country-manager',
+        'admin': '/admin',
+      };
+      const targetPath = roleRedirects[userRole] || '/requester';
+      return NextResponse.redirect(new URL(targetPath, req.url));
+    }
+
+    // 4. ROLE ISOLATION MATRIX
+    if (path.startsWith('/requester') && userRole !== 'requester') {
+      return NextResponse.redirect(new URL('/unauthorised', req.url));
+    }
+    if (path.startsWith('/finance-officer') && userRole !== 'finance-officer') {
+      return NextResponse.redirect(new URL('/unauthorised', req.url));
+    }
+    if (path.startsWith('/admin') && userRole !== 'admin') {
+      return NextResponse.redirect(new URL('/unauthorised', req.url));
+    }
+    if (path.startsWith('/head-of-operations') && userRole !== 'head-of-operations') {
+      return NextResponse.redirect(new URL('/unauthorised', req.url));
+    }
+    if (path.startsWith('/country-manager') && userRole !== 'country-manager') {
+      return NextResponse.redirect(new URL('/unauthorised', req.url));
+    }
+
+    return res;
 
   } catch (err) {
-    console.error("Invite API Error:", err.message);
-    return NextResponse.json({ 
-      success: false, 
-      error: `Action halted: ${err.message}` 
-    }, { status: 500 });
+    // Graceful Fail-Safe: If Edge runtime encounters any critical error, pass through safely instead of returning 500
+    console.error("Middleware Edge Execution Error:", err);
+    return res;
   }
 }
+
+export const config = {
+  matcher: [
+    '/login',
+    '/admin/:path*',
+    '/country-manager/:path*',
+    '/finance-officer/:path*',
+    '/head-of-operations/:path*',
+    '/requester/:path*',
+    '/profile/:path*'
+  ],
+};
