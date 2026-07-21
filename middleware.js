@@ -5,13 +5,22 @@ export async function middleware(req) {
   const res = NextResponse.next();
 
   try {
-    const supabase = createMiddlewareClient({ req, res });
-
-    // 1. SAFE SESSION CHECK
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     const path = req.nextUrl.pathname;
 
-    // If no active session, restrict access to protected pages
+    // 1. Explicit bypass for public/auth/api paths
+    if (
+      path.startsWith('/reset-password') || 
+      path.startsWith('/auth') || 
+      path.startsWith('/api') ||
+      path.includes('.')
+    ) {
+      return res;
+    }
+
+    const supabase = createMiddlewareClient({ req, res });
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    // 2. Unauthenticated user handling
     if (!session || sessionError) {
       if (path !== '/login') {
         return NextResponse.redirect(new URL('/login', req.url));
@@ -19,73 +28,75 @@ export async function middleware(req) {
       return res;
     }
 
-    // 2. EXTRACT ROLE (Prioritize metadata stored directly on JWT token)
-    let userRole = session.user?.user_metadata?.role;
+    // 3. FETCH ROLE DIRECTLY FROM DATABASE PROFILES TABLE (Ground Truth)
+    let userRole = null;
 
-    // Optional DB Fallback (Wrapped in isolated try/catch so DB issues NEVER cause a 500 error)
-    if (!userRole) {
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .maybeSingle();
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .maybeSingle();
 
-        if (profile?.role) {
-          userRole = profile.role;
-        }
-      } catch (dbError) {
-        console.error("Edge DB lookup skipped:", dbError?.message);
+      if (profile?.role) {
+        userRole = profile.role;
       }
+    } catch (dbErr) {
+      console.error("Middleware DB lookup error:", dbErr?.message);
     }
 
-    // Default to requester if role extraction completely fails
+    // Fallback to user_metadata if DB query failed
     if (!userRole) {
-      userRole = 'requester';
+      userRole = session.user?.user_metadata?.role || 'requester';
     }
 
-    // 3. LOGGED-IN REDIRECT FROM /login
-    if (path === '/login') {
-      const roleRedirects = {
-        'requester': '/requester',
-        'finance-officer': '/finance-officer',
-        'head-of-operations': '/head-of-operations',
-        'country-manager': '/country-manager',
-        'admin': '/admin',
-      };
-      const targetPath = roleRedirects[userRole] || '/requester';
-      return NextResponse.redirect(new URL(targetPath, req.url));
+    const cleanRole = userRole.toString().trim().toLowerCase();
+
+    const roleRedirects = {
+      'requester': '/requester',
+      'finance-officer': '/finance-officer',
+      'head-of-operations': '/head-of-operations',
+      'country-manager': '/country-manager',
+      'admin': '/admin',
+    };
+
+    const targetDashboard = roleRedirects[cleanRole] || '/requester';
+
+    // 4. Redirect logged-in users visiting / or /login to their assigned dashboard
+    if (path === '/' || path === '/login') {
+      return NextResponse.redirect(new URL(targetDashboard, req.url));
     }
 
-    // 4. ROLE ISOLATION MATRIX
-    if (path.startsWith('/requester') && userRole !== 'requester') {
+    // 5. ISOLATION ROUTE MATRIX
+    if (path.startsWith('/requester') && cleanRole !== 'requester') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }
-    if (path.startsWith('/finance-officer') && userRole !== 'finance-officer') {
+    if (path.startsWith('/finance-officer') && cleanRole !== 'finance-officer') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }
-    if (path.startsWith('/admin') && userRole !== 'admin') {
+    if (path.startsWith('/admin') && cleanRole !== 'admin') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }
-    if (path.startsWith('/head-of-operations') && userRole !== 'head-of-operations') {
+    if (path.startsWith('/head-of-operations') && cleanRole !== 'head-of-operations') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }
-    if (path.startsWith('/country-manager') && userRole !== 'country-manager') {
+    if (path.startsWith('/country-manager') && cleanRole !== 'country-manager') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }
 
     return res;
 
   } catch (err) {
-    // Graceful Fail-Safe: If Edge runtime encounters any critical error, pass through safely instead of returning 500
-    console.error("Middleware Edge Execution Error:", err);
+    console.error("Middleware Execution Error:", err);
     return res;
   }
 }
 
 export const config = {
   matcher: [
+    '/',
     '/login',
+    '/reset-password',
     '/admin/:path*',
     '/country-manager/:path*',
     '/finance-officer/:path*',
