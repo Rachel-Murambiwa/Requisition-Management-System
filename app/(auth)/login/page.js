@@ -16,7 +16,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSignIn = async (e) => {
-    // Prevent natural browser submission if triggered via form element wraps
     if (e) e.preventDefault();
 
     if (!email || !password) {
@@ -28,6 +27,7 @@ export default function LoginPage() {
     setError('');
 
     try {
+      // 1. Authenticate credentials
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
@@ -35,15 +35,19 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
-      const { data: profile, error: profileError } = await supabase
+      // 2. Fetch profile safely using .maybeSingle() to prevent hard exception throws
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', authData.user.id)
-        .single();
+        .maybeSingle();
 
-      if (profileError) throw profileError;
+      // 3. Extract and normalize role string (checking DB profile first, then user_metadata, then fallback to requester)
+      const rawRole = (profile?.role || authData.user?.user_metadata?.role || 'requester')
+        .toString()
+        .trim()
+        .toLowerCase();
 
-      // ✨ FIXED: Synced keys to match your exact database enum syntax strings
       const roleRedirects = {
         'requester': '/requester',
         'finance-officer': '/finance-officer',
@@ -52,18 +56,19 @@ export default function LoginPage() {
         'admin': '/admin',
       };
 
-      const targetPath = roleRedirects[profile.role] || '/unauthorised';
+      // Fallback cleanly to /requester rather than /unauthorised
+      const targetPath = roleRedirects[rawRole] || '/requester';
 
-      // Force Next.js router engine cache to sync active authentication cookie contexts
+      // 4. Sync Next.js router engine cache
       router.refresh();
 
-      // Short timeout layout buffer to allow the engine to commit session tokens fully before navigation 
+      // Short buffer to commit session cookies cleanly before pushing path
       setTimeout(() => {
         router.push(targetPath);
       }, 150);
       
     } catch (err) {
-      console.error(err);
+      console.error("Authentication Error:", err);
       setError('invalid login credentials. please try again.');
     } finally {
       setIsLoading(false);
@@ -102,7 +107,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Form Container Wrapper ensuring proper submission tracking mechanics */}
+        {/* Form Container Wrapper */}
         <form onSubmit={handleSignIn} className="space-y-5">
           
           {/* Email Block */}
