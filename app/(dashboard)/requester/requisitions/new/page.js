@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client';
 import NotificationCenter from '@/components/layout/NotificationCenter';
 import { 
   ArrowLeft, 
-  DollarSign, 
   UploadCloud, 
   AlertTriangle, 
   X, 
@@ -17,7 +16,9 @@ import {
   Briefcase,
   Loader2,
   CheckCircle2,
-  LogOut 
+  LogOut,
+  Trash2,
+  DollarSign
 } from 'lucide-react';
 
 export default function NewRequisitionPage() {
@@ -42,14 +43,24 @@ export default function NewRequisitionPage() {
       }
     }
     resolveAuthenticatedSession();
-  }, []); 
+  }, [supabase]); 
 
   const [requestType, setRequestType] = useState('standard');
-  const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
-  const [justification, setJustification] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   
+  // 📊 ITEMIZED REQUISITION LEDGER ITEMS (Spreadsheet Table Rows)
+  const [items, setItems] = useState([
+    { 
+      id: 1, 
+      dateRequested: new Date().toISOString().split('T')[0], 
+      purpose: '', 
+      dateRequired: '', 
+      hasThreeQuotes: 'No', 
+      amount: '' 
+    }
+  ]);
+
   const [quotes, setQuotes] = useState([]);
   const [vatCerts, setVatCerts] = useState([]);
   const [emergencyDocs, setEmergencyDocs] = useState([]);
@@ -91,22 +102,47 @@ export default function NewRequisitionPage() {
     'petty cash disbursement'
   ];
 
+  // ➕ Row management for itemized ledger table
+  const addLedgerRow = () => {
+    setItems([
+      ...items,
+      {
+        id: Date.now(),
+        dateRequested: new Date().toISOString().split('T')[0],
+        purpose: '',
+        dateRequired: '',
+        hasThreeQuotes: 'No',
+        amount: ''
+      }
+    ]);
+  };
+
+  const removeLedgerRow = (id) => {
+    if (items.length > 1) {
+      setItems(items.filter(item => item.id !== id));
+    }
+  };
+
+  const updateLedgerRow = (id, field, value) => {
+    setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  // 💰 Calculate dynamic itemized total sum
+  const itemizedTotal = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+
   // 🗓️ Calculate total trip duration dynamically
   const calculatedDays = (startDate && endDate) 
     ? Math.max(1, Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)))
     : 1;
 
-  // 👥 Calculate number of travelers dynamically
   const totalTravelerCount = travelers.length;
 
-  // 💰 Mathematically scale lodging and meals by Travelers AND Days
   const scaledLodgingTotal = accomResponsibility === 'Self' 
     ? (parseFloat(lodgingPerDiem) || 0) * calculatedDays * totalTravelerCount
-    : 0; // If Uncommon pays lodging directly, exclude it from per-diem release calculations
+    : 0;
 
   const scaledMealsTotal = (parseFloat(mealsPerDiem) || 0) * calculatedDays * totalTravelerCount;
 
-  // 📈 Calculated Travel Manifest Sum
   const calculatedTravelTotal = 
     (parseFloat(transportCost) || 0) + 
     (parseFloat(fuelCost) || 0) + 
@@ -114,12 +150,11 @@ export default function NewRequisitionPage() {
     scaledLodgingTotal + 
     scaledMealsTotal;
 
-  // 🚀 FIXED: Strictly bind final amount to active request type to prevent state leakage
-  const finalAmount = requestType === 'travel' 
-    ? calculatedTravelTotal 
-    : (parseFloat(amount) || 0);
+  const finalAmount = requestType === 'travel' ? calculatedTravelTotal : itemizedTotal;
 
-  const requiresComplianceDocs = finalAmount > 50 && requestType === 'standard';
+  // Determine if ANY line item exceeds $50 or if total exceeds $50
+  const hasLineItemOver50 = items.some(item => (parseFloat(item.amount) || 0) > 50 || item.hasThreeQuotes === 'Yes');
+  const requiresComplianceDocs = (finalAmount > 50 || hasLineItemOver50) && requestType === 'standard';
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -252,16 +287,22 @@ export default function NewRequisitionPage() {
         return;
       }
     } else {
-      if (!amount || !category || !justification || !paymentMethod) {
-        setError('all foundational fields are required to log an official funding requisition.');
+      // Validate spreadsheet items
+      const invalidRows = items.some(item => !item.purpose || !item.amount || parseFloat(item.amount) <= 0);
+      if (invalidRows) {
+        setError('please ensure all rows in the spreadsheet have a valid purpose and monetary amount.');
+        return;
+      }
+      if (!category || !paymentMethod) {
+        setError('please select an allocation category and preferred payment method.');
         return;
       }
       if (finalAmount <= 0) {
-        setError('please enter a valid monetary allocation amount greater than zero.');
+        setError('total requested amount must be greater than zero.');
         return;
       }
       if (requiresComplianceDocs && (quotes.length !== 3 || vatCerts.length !== 1)) {
-        setError('procurement guidelines state you must supply exactly 3 distinct quotes and 1 vat certificate.');
+        setError('procurement guidelines state you must supply exactly 3 distinct quotes and 1 vat certificate for requests/items over $50.');
         return;
       }
     }
@@ -272,6 +313,11 @@ export default function NewRequisitionPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const compiledDocumentsArray = requestType === 'emergency' ? emergencyDocs : [...quotes, ...vatCerts];
 
+      // Compile justifications string from itemized rows
+      const compiledJustification = requestType === 'travel' 
+        ? `travel purpose: ${travelPurpose}. location route: ${travelLocation}.` 
+        : items.map(i => `${i.purpose} ($${parseFloat(i.amount).toFixed(2)})`).join('; ');
+
       const { error: insertError } = await supabase
         .from('requisitions')
         .insert([{
@@ -280,13 +326,12 @@ export default function NewRequisitionPage() {
           location: activeUser.hub,
           amount: finalAmount,
           category: requestType === 'travel' ? 'travel & logistics' : category,
-          justification: requestType === 'travel' 
-            ? `travel purpose: ${travelPurpose}. location route: ${travelLocation}.` 
-            : justification,
+          justification: compiledJustification,
           payment_method: paymentMethod,
           is_emergency: requestType === 'emergency',
           status: 'pending',
           documents: compiledDocumentsArray, 
+          itemized_breakdown: requestType !== 'travel' ? items : null,
           travel_meta: requestType === 'travel' ? {
             travelPurpose,
             travelLocation,
@@ -337,7 +382,7 @@ export default function NewRequisitionPage() {
       </nav>
 
       {/* Workspace core */}
-      <main className="max-w-3xl mx-auto px-4 mt-10">
+      <main className="max-w-5xl mx-auto px-4 mt-10">
         
         <div onClick={() => router.push('/requester')} className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-semibold transition-colors cursor-pointer mb-8 select-none">
           <ArrowLeft className="w-4 h-4" /> <span className="lowercase">back to overview</span>
@@ -348,7 +393,7 @@ export default function NewRequisitionPage() {
             
             <div className="flex flex-col border-b border-gray-100 pb-4">
               <h1 className="text-3xl font-bold text-[#0A1628] leading-tight tracking-tight lowercase">submit fund requisition</h1>
-              <p className="text-sm text-[#4B5563] mt-2">initialize an internal cash allocation request or detailed travel manifest block</p>
+              <p className="text-sm text-[#4B5563] mt-2">initialize an itemized funds request ledger or detailed travel manifest block</p>
             </div>
 
             {/* Tri-Toggle Workflow Tabs */}
@@ -359,6 +404,183 @@ export default function NewRequisitionPage() {
             </div>
 
             {error && <div className="p-3 bg-[#FEE2E2] border border-l-4 border-l-[#991B1B] border-[#FECACA] rounded-r-md text-xs font-medium text-[#991B1B] lowercase">{error}</div>}
+
+            {/* 📊 SPREADSHEET LEDGER VIEW FOR STANDARD & EMERGENCY REQUESTS */}
+            {requestType !== 'travel' && (
+              <div className="space-y-6 animate-fadeIn">
+                
+                {/* Excel Style Header Banner */}
+                <div className="bg-[#EAB308] bg-opacity-90 text-[#0A1628] px-4 py-2 rounded-t-md font-bold text-xs uppercase tracking-wider flex items-center justify-between border border-yellow-500">
+                  <span>Filled out by Requestor</span>
+                  <div className="flex items-center gap-2 bg-white px-3 py-1 rounded shadow-sm text-sm border border-yellow-600 font-mono">
+                    <span className="text-gray-500 font-bold text-xs">Total Requested:</span>
+                    <span className="text-[#0A1628] font-black">${itemizedTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Spreadsheet Grid Table */}
+                <div className="border border-gray-200 rounded-b-md overflow-x-auto bg-white shadow-xs">
+                  <table className="w-full text-left text-xs border-collapse font-sans">
+                    <thead>
+                      <tr className="bg-gray-100 border-b border-gray-300 text-gray-700 font-bold uppercase tracking-wider">
+                        <th className="p-2.5 border-r border-gray-200 w-32">Date Requested</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[140px]">Requester Name</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[130px]">Hub/Department</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[220px]">Purpose of Funds</th>
+                        <th className="p-2.5 border-r border-gray-200 w-32">Date Required</th>
+                        <th className="p-2.5 border-r border-gray-200 w-28 text-center">Three Quotes?</th>
+                        <th className="p-2.5 border-r border-gray-200 w-32 text-right">Amount (USD)</th>
+                        <th className="p-2.5 text-center w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {items.map((row, index) => (
+                        <tr key={row.id} className={index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'}>
+                          <td className="p-2 border-r border-gray-200">
+                            <input 
+                              type="date" 
+                              value={row.dateRequested} 
+                              onChange={(e) => updateLedgerRow(row.id, 'dateRequested', e.target.value)}
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 rounded text-xs focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-2 border-r border-gray-200 text-gray-600 font-medium">
+                            {activeUser.name}
+                          </td>
+                          <td className="p-2 border-r border-gray-200 text-gray-600 font-medium uppercase">
+                            {activeUser.hub} hub
+                          </td>
+                          <td className="p-2 border-r border-gray-200">
+                            <input 
+                              type="text" 
+                              placeholder="Describe purpose/items..." 
+                              value={row.purpose} 
+                              onChange={(e) => updateLedgerRow(row.id, 'purpose', e.target.value)}
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-2 border-r border-gray-200">
+                            <input 
+                              type="date" 
+                              value={row.dateRequired} 
+                              onChange={(e) => updateLedgerRow(row.id, 'dateRequired', e.target.value)}
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-2 border-r border-gray-200 text-center">
+                            <select 
+                              value={row.hasThreeQuotes} 
+                              onChange={(e) => updateLedgerRow(row.id, 'hasThreeQuotes', e.target.value)}
+                              className="p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs font-bold text-center focus:bg-white focus:outline-none cursor-pointer"
+                            >
+                              <option value="No">No</option>
+                              <option value="Yes">Yes</option>
+                            </select>
+                          </td>
+                          <td className="p-2 border-r border-gray-200 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-gray-400 font-mono">$</span>
+                              <input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                value={row.amount} 
+                                onChange={(e) => updateLedgerRow(row.id, 'amount', e.target.value)}
+                                className="w-24 p-1 text-right font-mono font-bold bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-2 text-center">
+                            {items.length > 1 && (
+                              <button 
+                                type="button" 
+                                onClick={() => removeLedgerRow(row.id)}
+                                className="text-gray-400 hover:text-red-600 bg-transparent border-none cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Add Row Button */}
+                <button 
+                  type="button" 
+                  onClick={addLedgerRow}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0747A1] hover:underline bg-transparent border-none cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Add Item Row
+                </button>
+
+                {/* General Allocation Category Selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="category-select">allocation category</label>
+                    <select id="category-select" value={category} onChange={(e) => setCategory(e.target.value)} disabled={isLoading} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all lowercase font-bold cursor-pointer">
+                      <option value="">select an operational category...</option>
+                      {hubCategories.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="payment-select">preferred disbursement channel</label>
+                    <select id="payment-select" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} disabled={isLoading} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all lowercase font-bold cursor-pointer">
+                      <option value="">select preferred distribution route...</option>
+                      {paymentChannels.map((mode, idx) => <option key={idx} value={mode}>{mode}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Procurement Compliance Attachments Over $50 */}
+                {requiresComplianceDocs && (
+                  <div className="p-5 border border-[#E5E7EB] rounded-lg bg-[#F9FAFB] space-y-4 text-xs font-semibold animate-slideDown">
+                    <div className="text-[10px] font-bold text-[#0A1628] uppercase tracking-wider border-b border-[#E5E7EB] pb-2 flex items-center gap-2">
+                      {isFileUploading && <Loader2 className="w-3.5 h-3.5 text-[#0747A1] animate-spin" />}
+                      <span>procurement compliance attachments ($50+ threshold)</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">1. 3 separate quotations ({quotes.length}/3)</span>
+                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${quotes.length >= 3 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
+                          <UploadCloud className="w-5 h-5 text-[#0747A1]" />
+                          <span className="text-xs text-[#4B5563] font-medium lowercase">select quote files</span>
+                          <input type="file" multiple disabled={isLoading || isFileUploading || quotes.length >= 3} onChange={handleQuotesUpload} className="hidden" accept=".pdf,.png,.jpg" />
+                        </label>
+                        <div className="space-y-1.5 mt-1">
+                          {quotes.map((f, i) => (
+                            <div key={i} className="text-xs bg-white border border-[#E5E7EB] px-2.5 py-1.5 rounded flex items-center justify-between text-[#0A1628] font-medium shadow-sm lowercase">
+                              <span className="truncate pr-2">{f.name}</span>
+                              <X onClick={() => removeFileAsset(f, 'quote')} className="w-3.5 h-3.5 text-[#9CA3AF] hover:text-[#991B1B] cursor-pointer shrink-0" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">2. 1 tax clearance cert ({vatCerts.length}/1)</span>
+                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${vatCerts.length >= 1 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
+                          <UploadCloud className="w-5 h-5 text-[#0747A1]" />
+                          <span className="text-xs text-[#4B5563] font-medium lowercase">select vat clearance files</span>
+                          <input type="file" multiple disabled={isLoading || isFileUploading || vatCerts.length >= 1} onChange={handleVatCertsUpload} className="hidden" accept=".pdf,.png,.jpg" />
+                        </label>
+                        <div className="space-y-1.5 mt-1">
+                          {vatCerts.map((f, i) => (
+                            <div key={i} className="text-xs bg-white border border-[#E5E7EB] px-2.5 py-1.5 rounded flex items-center justify-between text-[#0A1628] font-medium shadow-sm lowercase">
+                              <span className="truncate pr-2">{f.name}</span>
+                              <X onClick={() => removeFileAsset(f, 'vat')} className="w-3.5 h-3.5 text-[#9CA3AF] hover:text-[#991B1B] cursor-pointer shrink-0" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Travel Parameters View Block */}
             {requestType === 'travel' && (
@@ -429,76 +651,15 @@ export default function NewRequisitionPage() {
                     </div>
                     <span className="text-2xl font-mono font-black text-white">${calculatedTravelTotal.toFixed(2)}</span>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* Standard Requisition Inputs */}
-            {requestType !== 'travel' && (
-              <div className="space-y-6">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="amount-input">required amount (usd)</label>
-                  <div className="relative flex items-center">
-                    <DollarSign className="absolute left-3 w-4 h-4 text-[#9CA3AF]" />
-                    <input id="amount-input" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" disabled={isLoading} className="w-full pl-9 pr-4 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all font-sans font-semibold" />
+                  <div className="flex flex-col gap-1.5 text-xs font-semibold pt-2">
+                    <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="payment-select-travel">preferred disbursement channel</label>
+                    <select id="payment-select-travel" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} disabled={isLoading} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all lowercase font-bold cursor-pointer">
+                      <option value="">select preferred distribution route...</option>
+                      {paymentChannels.map((mode, idx) => <option key={idx} value={mode}>{mode}</option>)}
+                    </select>
                   </div>
-                  {requiresComplianceDocs && <span className="text-[11px] font-medium text-[#B45309] mt-1 flex items-center gap-1 lowercase">⚠️ amounts exceeding $50 strictly require three quotations and one vat verification matrix row.</span>}
                 </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="category-select">allocation category</label>
-                  <select id="category-select" value={category} onChange={(e) => setCategory(e.target.value)} disabled={isLoading} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all lowercase font-bold cursor-pointer"><option value="">select an operational category...</option>{hubCategories.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}</select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="justification-text">business justification & itemized breakdown</label>
-                  <textarea id="justification-text" rows={4} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="describe exactly what these funds will purchase..." disabled={isLoading} className="w-full p-3 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all font-sans resize-none font-medium leading-relaxed" />
-                </div>
-
-                {/* Procurement Compliance Attachments Over $50 */}
-                {requiresComplianceDocs && (
-                  <div className="p-5 border border-[#E5E7EB] rounded-lg bg-[#F9FAFB] space-y-4 text-xs font-semibold animate-slideDown">
-                    <div className="text-[10px] font-bold text-[#0A1628] uppercase tracking-wider border-b border-[#E5E7EB] pb-2 flex items-center gap-2">
-                      {isFileUploading && <Loader2 className="w-3.5 h-3.5 text-[#0747A1] animate-spin" />}
-                      <span>procurement compliance attachments ($50+ threshold)</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">1. 3 separate quotations ({quotes.length}/3)</span>
-                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${quotes.length >= 3 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
-                          <UploadCloud className="w-5 h-5 text-[#0747A1]" />
-                          <span className="text-xs text-[#4B5563] font-medium lowercase">select quote files</span>
-                          <input type="file" multiple disabled={isLoading || isFileUploading || quotes.length >= 3} onChange={handleQuotesUpload} className="hidden" accept=".pdf,.png,.jpg" />
-                        </label>
-                        <div className="space-y-1.5 mt-1">
-                          {quotes.map((f, i) => (
-                            <div key={i} className="text-xs bg-white border border-[#E5E7EB] px-2.5 py-1.5 rounded flex items-center justify-between text-[#0A1628] font-medium shadow-sm lowercase">
-                              <span className="truncate pr-2">{f.name}</span>
-                              <X onClick={() => removeFileAsset(f, 'quote')} className="w-3.5 h-3.5 text-[#9CA3AF] hover:text-[#991B1B] cursor-pointer shrink-0" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[11px] font-semibold text-[#4B5563] uppercase tracking-wide">2. 1 tax clearance cert ({vatCerts.length}/1)</span>
-                        <label className={`border border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-1 transition-colors ${vatCerts.length >= 1 || isFileUploading ? 'bg-[#F3F4F6] border-[#D1D5DB] cursor-not-allowed opacity-70' : 'bg-white border-[#CDD5DF] cursor-pointer hover:bg-gray-50'}`}>
-                          <UploadCloud className="w-5 h-5 text-[#0747A1]" />
-                          <span className="text-xs text-[#4B5563] font-medium lowercase">select vat clearance files</span>
-                          <input type="file" multiple disabled={isLoading || isFileUploading || vatCerts.length >= 1} onChange={handleVatCertsUpload} className="hidden" accept=".pdf,.png,.jpg" />
-                        </label>
-                        <div className="space-y-1.5 mt-1">
-                          {vatCerts.map((f, i) => (
-                            <div key={i} className="text-xs bg-white border border-[#E5E7EB] px-2.5 py-1.5 rounded flex items-center justify-between text-[#0A1628] font-medium shadow-sm lowercase">
-                              <span className="truncate pr-2">{f.name}</span>
-                              <X onClick={() => removeFileAsset(f, 'vat')} className="w-3.5 h-3.5 text-[#9CA3AF] hover:text-[#991B1B] cursor-pointer shrink-0" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -525,11 +686,6 @@ export default function NewRequisitionPage() {
                 </div>
               </div>
             )}
-
-            <div className="flex flex-col gap-1.5 text-xs font-semibold">
-              <label className="text-xs font-semibold text-[#4B5563] uppercase tracking-wider" htmlFor="payment-select">preferred disbursement channel</label>
-              <select id="payment-select" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} disabled={isLoading} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#0747A1] transition-all lowercase font-bold cursor-pointer"><option value="">select preferred distribution route...</option>{paymentChannels.map((mode, idx) => <option key={idx} value={mode}>{mode}</option>)}</select>
-            </div>
 
             <div className="pt-4 flex items-center justify-end gap-4 border-t border-[#E5E7EB] text-xs font-semibold">
               <div onClick={() => !isLoading && router.push('/requester')} className="px-5 py-2.5 text-sm font-medium text-[#4B5563] hover:text-[#111827] cursor-pointer select-none lowercase transition-colors">cancel</div>
