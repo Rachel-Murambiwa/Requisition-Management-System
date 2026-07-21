@@ -7,15 +7,15 @@ import { Lock, CheckCircle2, Loader2, AlertCircle, ShieldCheck } from 'lucide-re
 
 export default function WelcomeActivationPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   // Interactive metadata profile tracking states
   const [staffName, setStaffName] = useState('staff member');
   const [staffRole, setStaffRole] = useState('requester');
-  
+
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -23,14 +23,35 @@ export default function WelcomeActivationPage() {
   // Read the temporary session parameters automatically on mount
   useEffect(() => {
     async function inspectOnboardingSession() {
-      const { data: { user }, error: sessionError } = await supabase.auth.getUser();
-      
-      if (user) {
-        // Automatically extract the pre-assigned metadata the admin configured
-        setStaffName(user.user_metadata?.name || 'staff member');
-        setStaffRole(user.user_metadata?.role || 'requester');
-      } else if (sessionError) {
-        console.error("onboarding session token missing:", sessionError.message);
+      try {
+        // Stale invite links land here with #access_token/refresh_token in the URL
+        // hash and no session established yet — capture it before reading the user,
+        // same as reset-password/page.js does.
+        if (typeof window !== 'undefined' && window.location.hash) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) throw sessionError;
+          }
+        }
+
+        const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+
+        if (user) {
+          // Automatically extract the pre-assigned metadata the admin configured
+          setStaffName(user.user_metadata?.name || 'staff member');
+          setStaffRole(user.user_metadata?.role || 'requester');
+        } else if (sessionError) {
+          throw sessionError;
+        }
+      } catch (err) {
+        console.error("onboarding session token missing:", err.message);
         setError('your account invitation token is invalid or has expired. please request a new link from your workspace administrator.');
       }
     }

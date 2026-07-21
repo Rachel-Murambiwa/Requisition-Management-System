@@ -7,7 +7,7 @@ import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,13 +35,20 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
+      // Profile row may not exist yet (trigger lag on a just-activated account) or
+      // may be unreadable (RLS). Don't fail the whole login over it — fall back to
+      // the role stored in auth user_metadata, same tolerance middleware.js already has.
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', authData.user.id)
         .single();
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('profile lookup failed, falling back to auth metadata role:', profileError.message);
+      }
+
+      const userRole = profile?.role || authData.user.user_metadata?.role;
 
       // ✨ FIXED: Synced keys to match your exact database enum syntax strings
       const roleRedirects = {
@@ -52,7 +59,7 @@ export default function LoginPage() {
         'admin': '/admin',
       };
 
-      const targetPath = roleRedirects[profile.role] || '/unauthorised';
+      const targetPath = roleRedirects[userRole] || '/unauthorised';
 
       // Force Next.js router engine cache to sync active authentication cookie contexts
       router.refresh();

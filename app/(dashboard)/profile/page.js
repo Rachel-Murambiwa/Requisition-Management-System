@@ -15,7 +15,7 @@ import {
 
 export default function UserProfilePage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   // Profile data state
   const [userMeta, setUserMeta] = useState({

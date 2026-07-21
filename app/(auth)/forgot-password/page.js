@@ -7,7 +7,7 @@ import { Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
