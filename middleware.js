@@ -1,102 +1,53 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-export async function middleware(req) {
-  // Create a base response stream so cookie headers are preserved
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
-
-  // Refresh and validate the active authentication session tokens
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  const path = req.nextUrl.pathname;
-
-  // 1. AUTHENTICATION PROTECTION GUARD
-  if (!session) {
-    if (path !== '/login') {
-      const loginUrl = new URL('/login', req.url);
-      return NextResponse.redirect(loginUrl);
+export async function POST(request) {
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: { autoRefreshToken: false, persistSession: false }
     }
-    return res;
-  }
-
-  // Prevent logged-in users from hitting the login page again
-  if (path === '/login') {
-    let fallbackRole = session?.user?.user_metadata?.role || 'requester';
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single();
-      if (profile?.role) fallbackRole = profile.role;
-    } catch (e) {}
-
-    const roleRedirects = {
-      'requester': '/requester',
-      'finance-officer': '/finance-officer',
-      'head-of-operations': '/head-of-operations',
-      'country-manager': '/country-manager',
-      'admin': '/admin',
-    };
-    return NextResponse.redirect(new URL(roleRedirects[fallbackRole] || '/unauthorised', req.url));
-  }
-
-  // 2. FETCH ROLE WITH USER METADATA FALLBACK
-  let userRole = session?.user?.user_metadata?.role;
+  );
 
   try {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', session.user.id)
-      .single();
+    const { email, name, role, hub_name } = await request.json();
 
-    if (profile && !error) {
-      userRole = profile.role;
+    if (!email || !name || !role || !hub_name) {
+      return NextResponse.json({ success: false, error: 'missing required parameters' }, { status: 400 });
     }
-  } catch (e) {
-    console.error("Middleware DB profile bypass:", e);
-  }
 
-  // If role lookup completely fails, fallback to client-side layout router handlers
-  if (!userRole) {
-    return res;
-  }
+    const cleanEmail = email.trim().toLowerCase();
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://requisition-management-system-melp.vercel.app';
 
-  // 3. ISOLATION ROUTE MATRIX
-  if (path.startsWith('/requester') && userRole !== 'requester') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
-  }
+    // 📩 Send real email invitation via your custom corporate SMTP domain
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(cleanEmail, {
+      redirectTo: `${siteUrl}/reset-password`,
+      data: {
+        name: name.toLowerCase().trim(),
+        role: role,
+        hub_name: hub_name
+      }
+    });
 
-  if (path.startsWith('/finance-officer') && userRole !== 'finance-officer') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
-  }
+    if (error) {
+      if (error.message.includes('already registered') || error.status === 422) {
+        return NextResponse.json({ success: false, error: 'this staff email has already been invited or registered' }, { status: 400 });
+      }
+      throw error;
+    }
 
-  if (path.startsWith('/admin') && userRole !== 'admin') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
-  }
+    return NextResponse.json({ 
+      success: true, 
+      user: data.user,
+      message: `workspace invitation successfully sent to ${cleanEmail}!` 
+    });
 
-  if (path.startsWith('/head-of-operations') && userRole !== 'head-of-operations') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
+  } catch (err) {
+    console.error("Invite API Error:", err.message);
+    return NextResponse.json({ 
+      success: false, 
+      error: `Action halted: ${err.message}` 
+    }, { status: 500 });
   }
-
-  if (path.startsWith('/country-manager') && userRole !== 'country-manager') {
-    return NextResponse.redirect(new URL('/unauthorised', req.url));
-  }
-
-  // Return the original response stream containing the refreshed cookie tokens
-  return res;
 }
-
-export const config = {
-  matcher: [
-    '/login', // Added to intercept the session lifecycle check cleanly
-    '/admin/:path*',
-    '/country-manager/:path*',
-    '/finance-officer/:path*',
-    '/head-of-operations/:path*',
-    '/requester/:path*',
-    '/profile/:path*'
-  ],
-};
