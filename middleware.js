@@ -2,12 +2,13 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  const res = NextResponse.next();
+  // 1. Create a base response
+  let res = NextResponse.next();
 
   try {
     const path = req.nextUrl.pathname;
 
-    // 1. Explicit bypass for public/auth/api paths
+    // Explicit bypass for static assets, public paths, and auth callbacks
     if (
       path.startsWith('/reset-password') || 
       path.startsWith('/auth') || 
@@ -17,10 +18,13 @@ export async function middleware(req) {
       return res;
     }
 
+    // 2. Initialize Supabase client and sync cookies WITH the response object
     const supabase = createMiddlewareClient({ req, res });
+
+    // CRITICAL: getSession refreshes session cookies and attaches updated headers to `res`
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    // 2. Unauthenticated user handling
+    // 3. Unauthenticated User Protection
     if (!session || sessionError) {
       if (path !== '/login') {
         return NextResponse.redirect(new URL('/login', req.url));
@@ -28,7 +32,7 @@ export async function middleware(req) {
       return res;
     }
 
-    // 3. FETCH ROLE DIRECTLY FROM DATABASE PROFILES TABLE (Ground Truth)
+    // 4. Extract Ground Truth Role (Check DB Profiles Table)
     let userRole = null;
 
     try {
@@ -45,7 +49,7 @@ export async function middleware(req) {
       console.error("Middleware DB lookup error:", dbErr?.message);
     }
 
-    // Fallback to user_metadata if DB query failed
+    // Fallback to user_metadata if DB read returns null
     if (!userRole) {
       userRole = session.user?.user_metadata?.role || 'requester';
     }
@@ -62,12 +66,12 @@ export async function middleware(req) {
 
     const targetDashboard = roleRedirects[cleanRole] || '/requester';
 
-    // 4. Redirect logged-in users visiting / or /login to their assigned dashboard
+    // 5. Logged-in redirect away from / or /login
     if (path === '/' || path === '/login') {
       return NextResponse.redirect(new URL(targetDashboard, req.url));
     }
 
-    // 5. ISOLATION ROUTE MATRIX
+    // 6. ISOLATION ROUTE MATRIX
     if (path.startsWith('/requester') && cleanRole !== 'requester') {
       return NextResponse.redirect(new URL('/unauthorised', req.url));
     }

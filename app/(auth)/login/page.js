@@ -35,7 +35,7 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
-      // 2. Fetch profile safely using .maybeSingle() to prevent hard exception throws
+      // 2. Fetch profile safely using .maybeSingle() to prevent unhandled exception throws
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
@@ -56,21 +56,14 @@ export default function LoginPage() {
         'admin': '/admin',
       };
 
-      // Fallback cleanly to /requester rather than /unauthorised
       const targetPath = roleRedirects[rawRole] || '/requester';
 
-      // 4. Sync Next.js router engine cache
-      router.refresh();
+      // 4. FORCE HARD REDIRECT TO FULLY COMMIT SESSION COOKIES TO NEXT.JS MIDDLEWARE
+      window.location.href = targetPath;
 
-      // Short buffer to commit session cookies cleanly before pushing path
-      setTimeout(() => {
-        router.push(targetPath);
-      }, 150);
-      
     } catch (err) {
       console.error("Authentication Error:", err);
       setError('invalid login credentials. please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
