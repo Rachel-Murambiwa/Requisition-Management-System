@@ -18,18 +18,20 @@ export async function POST(request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
-    // 🚀 BYPASS SMTP: Create the user directly as "CONFIRMED" to skip email limits
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email: cleanEmail,
-      password: 'InitialPassword123!', // Give them a temporary default password
-      email_confirm: true,               // Marks them confirmed instantly!
-      user_metadata: {
-        name: name.toLowerCase().trim(),
-        role: role,
-        hub_name: hub_name
+    // 📩 REAL EMAIL DISPATCH: Send invitation link via Supabase Auth Mailer
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      cleanEmail,
+      {
+        redirectTo: `${siteUrl}/reset-password`,
+        data: {
+          name: name.toLowerCase().trim(),
+          role: role,
+          hub_name: hub_name
+        }
       }
-    });
+    );
 
     if (error) {
       if (error.message.includes('already registered') || error.status === 422) {
@@ -38,11 +40,10 @@ export async function POST(request) {
       throw error;
     }
 
-    // Return success message instructing them on their auto-generated access credentials
     return NextResponse.json({ 
       success: true, 
       user: data.user,
-      message: `Bypassed SMTP restrictions. Account active! Default password: InitialPassword123!` 
+      message: `Invitation email sent successfully to ${cleanEmail}` 
     });
 
   } catch (err) {
