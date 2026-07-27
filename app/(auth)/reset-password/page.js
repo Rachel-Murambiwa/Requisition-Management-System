@@ -17,10 +17,9 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [verifyingLink, setVerifyingLink] = useState(true);
 
-  // Store tokens in state so they don't get lost or prematurely consumed
-  const [tokenParams, setTokenParams] = useState({ tokenHash: null, type: 'invite' });
+  const [tokenParams, setTokenParams] = useState({ tokenHash: null, type: 'invite', accessToken: null, refreshToken: null });
 
-  // 📡 LINK CAPTURE: Securely extract URL credentials on load without burning them yet
+  // Extract URL parameters upon load
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -29,15 +28,15 @@ export default function ResetPasswordPage() {
         const type = urlParams.get('type') || 'invite';
 
         if (tokenHash) {
-          setTokenParams({ tokenHash, type });
+          setTokenParams({ tokenHash, type, accessToken: null, refreshToken: null });
         } else {
-          // Check hash parameters fallback
+          // Check hash parameters fallback (#access_token=...)
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           const accessToken = hashParams.get('access_token');
           const refreshToken = hashParams.get('refresh_token');
-          
+
           if (accessToken && refreshToken) {
-            setTokenParams({ accessToken, refreshToken, type: 'recovery' });
+            setTokenParams({ tokenHash: null, accessToken, refreshToken, type: 'recovery' });
           }
         }
       } catch (err) {
@@ -71,7 +70,7 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 1. Establish the session first right before saving the password
+      // 1. Establish session using the captured tokens
       if (tokenParams.tokenHash) {
         const { error: verifyError } = await supabase.auth.verifyOtp({
           token_hash: tokenParams.tokenHash,
@@ -84,30 +83,28 @@ export default function ResetPasswordPage() {
           refresh_token: tokenParams.refreshToken,
         });
         if (sessionError) throw sessionError;
+      } else {
+        // Fallback: check if session already exists from Supabase client auto-exchange
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('invalid or missing session tokens. please click the link in your email again.');
+        }
       }
 
-      // 2. 🔒 SECURE SAVE: Now that we have verified/refreshed the session, write the password
+      // 2. Commit updated password to auth.users
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
-      
-      // 3. Clear memory and browser cookie state to prevent post-login clash
+
+      // 3. Clear temp recovery session cleanly without breaking cookies
       await supabase.auth.signOut();
-      
-      if (typeof document !== 'undefined') {
-        document.cookie.split(";").forEach((c) => {
-          document.cookie = c
-            .replace(/^ +/, "")
-            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-        });
-      }
 
       setIsSuccess(true);
     } catch (err) {
-      console.error("Password update tracking error:", err.message);
-      setError('authentication link expired or invalid. please request a new invitation from your administrator.');
+      console.error("Password update error:", err.message);
+      setError(err?.message || 'authentication link expired or invalid. please request a new invitation.');
     } finally {
       setIsLoading(false);
     }
@@ -215,10 +212,7 @@ export default function ResetPasswordPage() {
               <button
                 type="button"
                 onClick={() => {
-                  router.refresh();
-                  setTimeout(() => {
-                    router.push('/login');
-                  }, 100);
+                  window.location.href = '/login';
                 }}
                 className="inline-flex items-center justify-center py-2.5 px-5 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer text-center lowercase border-none focus:outline-none"
               >
