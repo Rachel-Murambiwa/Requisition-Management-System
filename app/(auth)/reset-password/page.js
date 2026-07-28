@@ -16,55 +16,29 @@ export default function ResetPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [verifyingLink, setVerifyingLink] = useState(true);
+  const [hasValidSession, setHasValidSession] = useState(false);
 
-  const [tokenParams, setTokenParams] = useState({
-    tokenHash: null,
-    type: 'invite',
-    code: null,
-    accessToken: null,
-    refreshToken: null,
-  });
-
-  // Extract URL parameters upon load
+  // By the time the user lands here, /auth/confirm has already verified
+  // their token server-side (via token_hash, no PKCE verifier required)
+  // and set the session via cookies. We just confirm it's there.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const checkSession = async () => {
       try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const tokenHash = urlParams.get('token_hash');
-        const code = urlParams.get('code');
-        const type = urlParams.get('type') || 'invite';
-
-        if (tokenHash) {
-          // Legacy / non-PKCE flow: token_hash arrives directly in the query string
-          setTokenParams({ tokenHash, type, code: null, accessToken: null, refreshToken: null });
-        } else if (code) {
-          // PKCE flow (default for current @supabase/auth-helpers-nextjs / @supabase/ssr):
-          // Supabase's /auth/v1/verify endpoint redirects back here with ?code=...
-          setTokenParams({ tokenHash: null, type, code, accessToken: null, refreshToken: null });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setHasValidSession(true);
         } else {
-          // Implicit flow fallback: tokens arrive in the URL hash fragment
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const accessToken = hashParams.get('access_token');
-          const refreshToken = hashParams.get('refresh_token');
-
-          if (accessToken && refreshToken) {
-            setTokenParams({
-              tokenHash: null,
-              code: null,
-              accessToken,
-              refreshToken,
-              type: 'recovery',
-            });
-          }
+          setError('invalid or expired link. please request a new invitation or password reset.');
         }
       } catch (err) {
-        console.error("Link capture error:", err.message);
-        setError("could not parse invitation link credentials.");
+        console.error("Session check error:", err.message);
+        setError('could not verify your session. please request a new link.');
       } finally {
         setVerifyingLink(false);
       }
-    }
-  }, []);
+    };
+    checkSession();
+  }, [supabase]);
 
   const handlePasswordUpdate = async (e) => {
     if (e) e.preventDefault();
@@ -88,47 +62,17 @@ export default function ResetPasswordPage() {
     setError('');
 
     try {
-      // 1. Establish session using the captured tokens
-      if (tokenParams.tokenHash) {
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: tokenParams.tokenHash,
-          type: tokenParams.type,
-        });
-        if (verifyError) throw verifyError;
-      } else if (tokenParams.code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
-          tokenParams.code
-        );
-        if (exchangeError) throw exchangeError;
-      } else if (tokenParams.accessToken && tokenParams.refreshToken) {
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: tokenParams.accessToken,
-          refresh_token: tokenParams.refreshToken,
-        });
-        if (sessionError) throw sessionError;
-      } else {
-        // Fallback: check if session already exists from Supabase client auto-exchange
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          throw new Error('invalid or missing session tokens. please click the link in your email again.');
-        }
-      }
-
-      // 1b. Safety check: confirm we actually have an authenticated user before
-      // touching their password. Prevents silently updating a stale/wrong session.
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('could not verify your identity. please request a new invitation link.');
       }
 
-      // 2. Commit updated password to auth.users
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) throw updateError;
 
-      // 3. Clear temp recovery session cleanly without breaking cookies
       await supabase.auth.signOut();
 
       setIsSuccess(true);
@@ -143,7 +87,6 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center bg-white px-4">
 
-      {/* Identity Logo Frame */}
       <div className="absolute top-8 left-6 sm:top-10 sm:left-12 flex items-center gap-2 select-none">
         <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">uncommon</span>
         <span className="text-[10px] bg-[#EFF6FF] text-[#1D4ED8] font-semibold px-2 py-0.5 rounded uppercase">rms</span>
@@ -186,7 +129,7 @@ export default function ResetPasswordPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    disabled={isLoading}
+                    disabled={isLoading || !hasValidSession}
                     className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
                   />
                   <button
@@ -212,7 +155,7 @@ export default function ResetPasswordPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    disabled={isLoading}
+                    disabled={isLoading || !hasValidSession}
                     className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-md text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] disabled:opacity-60 transition-all font-sans"
                   />
                 </div>
@@ -221,7 +164,7 @@ export default function ResetPasswordPage() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || !hasValidSession}
                   className="w-full flex items-center justify-center py-3 px-4 bg-[#0A1628] hover:bg-[#1A2E4A] text-white font-medium text-sm rounded-md shadow-sm transition-colors cursor-pointer text-center lowercase border-none focus:outline-none disabled:opacity-60"
                 >
                   {isLoading ? 'saving password credentials...' : 'save password credentials'}
