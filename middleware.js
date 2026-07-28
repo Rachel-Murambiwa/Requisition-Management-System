@@ -2,13 +2,13 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  // 1. Create a base response
   let res = NextResponse.next();
 
   try {
     const path = req.nextUrl.pathname;
 
-    // Explicit bypass for static assets, public paths, and auth callbacks
+    // 1. Explicit bypass for /reset-password, static assets, public routes, and auth APIs
+    // CRITICAL: Return immediately before calling `getSession()` so temporary invite tokens are NOT processed into active user sessions here!
     if (
       path.startsWith('/reset-password') || 
       path.startsWith('/auth') || 
@@ -18,10 +18,8 @@ export async function middleware(req) {
       return res;
     }
 
-    // 2. Initialize Supabase client and sync cookies WITH the response object
+    // 2. Initialize Supabase client and check session
     const supabase = createMiddlewareClient({ req, res });
-
-    // CRITICAL: getSession refreshes session cookies and attaches updated headers to `res`
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
     // 3. Unauthenticated User Protection
@@ -49,7 +47,6 @@ export async function middleware(req) {
       console.error("Middleware DB lookup error:", dbErr?.message);
     }
 
-    // Fallback to user_metadata if DB read returns null
     if (!userRole) {
       userRole = session.user?.user_metadata?.role || 'requester';
     }
