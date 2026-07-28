@@ -17,7 +17,13 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [verifyingLink, setVerifyingLink] = useState(true);
 
-  const [tokenParams, setTokenParams] = useState({ tokenHash: null, type: 'invite', accessToken: null, refreshToken: null });
+  const [tokenParams, setTokenParams] = useState({
+    tokenHash: null,
+    type: 'invite',
+    code: null,
+    accessToken: null,
+    refreshToken: null,
+  });
 
   // Extract URL parameters upon load
   useEffect(() => {
@@ -25,18 +31,30 @@ export default function ResetPasswordPage() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const tokenHash = urlParams.get('token_hash');
+        const code = urlParams.get('code');
         const type = urlParams.get('type') || 'invite';
 
         if (tokenHash) {
-          setTokenParams({ tokenHash, type, accessToken: null, refreshToken: null });
+          // Legacy / non-PKCE flow: token_hash arrives directly in the query string
+          setTokenParams({ tokenHash, type, code: null, accessToken: null, refreshToken: null });
+        } else if (code) {
+          // PKCE flow (default for current @supabase/auth-helpers-nextjs / @supabase/ssr):
+          // Supabase's /auth/v1/verify endpoint redirects back here with ?code=...
+          setTokenParams({ tokenHash: null, type, code, accessToken: null, refreshToken: null });
         } else {
-          // Check hash parameters fallback (#access_token=...)
+          // Implicit flow fallback: tokens arrive in the URL hash fragment
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           const accessToken = hashParams.get('access_token');
           const refreshToken = hashParams.get('refresh_token');
 
           if (accessToken && refreshToken) {
-            setTokenParams({ tokenHash: null, accessToken, refreshToken, type: 'recovery' });
+            setTokenParams({
+              tokenHash: null,
+              code: null,
+              accessToken,
+              refreshToken,
+              type: 'recovery',
+            });
           }
         }
       } catch (err) {
@@ -77,6 +95,11 @@ export default function ResetPasswordPage() {
           type: tokenParams.type,
         });
         if (verifyError) throw verifyError;
+      } else if (tokenParams.code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
+          tokenParams.code
+        );
+        if (exchangeError) throw exchangeError;
       } else if (tokenParams.accessToken && tokenParams.refreshToken) {
         const { error: sessionError } = await supabase.auth.setSession({
           access_token: tokenParams.accessToken,
@@ -89,6 +112,13 @@ export default function ResetPasswordPage() {
         if (!session) {
           throw new Error('invalid or missing session tokens. please click the link in your email again.');
         }
+      }
+
+      // 1b. Safety check: confirm we actually have an authenticated user before
+      // touching their password. Prevents silently updating a stale/wrong session.
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('could not verify your identity. please request a new invitation link.');
       }
 
       // 2. Commit updated password to auth.users
@@ -112,7 +142,7 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center bg-white px-4">
-      
+
       {/* Identity Logo Frame */}
       <div className="absolute top-8 left-6 sm:top-10 sm:left-12 flex items-center gap-2 select-none">
         <span className="text-2xl font-bold tracking-tight text-[#1D4ED8]">uncommon</span>
@@ -120,7 +150,7 @@ export default function ResetPasswordPage() {
       </div>
 
       <div className="w-full max-w-[420px] py-12">
-        
+
         {verifyingLink ? (
           <div className="flex flex-col items-center justify-center gap-3 text-gray-400 text-xs lowercase py-12">
             <Loader2 className="w-6 h-6 text-[#1D4ED8] animate-spin" />
