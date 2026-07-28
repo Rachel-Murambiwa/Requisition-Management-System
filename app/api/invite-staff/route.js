@@ -18,7 +18,7 @@ export async function POST(request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     // 📩 REAL EMAIL DISPATCH: Send invitation link via Supabase Auth Mailer
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
