@@ -21,10 +21,11 @@ export async function POST(request) {
     const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     // 📩 REAL EMAIL DISPATCH: Send invitation link via Supabase Auth Mailer
+    // CRITICAL: Point to /auth/confirm?next=/reset-password so server-side verifyOtp runs!
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       cleanEmail,
       {
-        redirectTo: `${siteUrl}/reset-password`,
+        redirectTo: `${siteUrl}/auth/confirm?next=/reset-password`,
         data: {
           name: name.toLowerCase().trim(),
           role: role,
