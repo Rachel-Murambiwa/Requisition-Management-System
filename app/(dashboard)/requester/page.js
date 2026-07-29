@@ -35,9 +35,11 @@ export default function RequesterDashboard() {
             hub: user.user_metadata?.hub_name || 'harare'
           });
 
+          // 🔒 FILTER BY USER_ID TO PREVENT SHOWING OTHER USERS' REQUISITIONS
           const { data: records, error } = await supabase
             .from('requisitions')
             .select('*')
+            .eq('user_id', user.id) // 👈 CRITICAL FIX HERE
             .order('created_at', { ascending: false });
 
           if (error) throw error;
@@ -58,10 +60,14 @@ export default function RequesterDashboard() {
   };
 
   const totalSpent = requisitions
-    .filter(r => r.status?.toLowerCase() === 'approved')
+    .filter(r => r.status?.toLowerCase() === 'approved' || r.status?.toLowerCase() === 'disbursed')
     .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
-  const pendingCount = requisitions.filter(r => r.status?.toLowerCase() === 'pending').length;
+  const pendingCount = requisitions.filter(r => 
+    r.status?.toLowerCase() === 'pending' || 
+    r.status?.toLowerCase() === 'hop_approved' || 
+    r.status?.toLowerCase() === 'finance_approved'
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-[#111827] font-sans antialiased pb-16">
@@ -169,19 +175,18 @@ export default function RequesterDashboard() {
                             <td className="px-5 py-4 font-mono font-bold text-gray-900">${parseFloat(req.amount).toFixed(2)}</td>
                             <td className="px-5 py-4">
                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide select-none transition-all duration-200 transform hover:-translate-y-0.5 hover:shadow-sm cursor-pointer ${
-                                currentStatus === 'approved' ? 'bg-green-50 text-green-700 border border-green-100' :
+                                currentStatus === 'approved' || currentStatus === 'disbursed' ? 'bg-green-50 text-green-700 border border-green-100' :
                                 currentStatus === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' : 
                                 'bg-amber-50 text-amber-700 border border-amber-100'
                               }`}>
-                                {currentStatus === 'approved' && <CheckCircle2 className="w-3 h-3 text-green-600" />}
+                                {(currentStatus === 'approved' || currentStatus === 'disbursed') && <CheckCircle2 className="w-3 h-3 text-green-600" />}
                                 {currentStatus === 'rejected' && <XCircle className="w-3 h-3 text-red-600" />}
-                                {currentStatus === 'pending' && <Clock className="w-3 h-3 text-amber-500" />}
-                                {currentStatus === 'rejected' ? 'rejected' : currentStatus}
+                                {(currentStatus === 'pending' || currentStatus === 'hop_approved' || currentStatus === 'finance_approved') && <Clock className="w-3 h-3 text-amber-500" />}
+                                {currentStatus}
                               </span>
                             </td>
                             <td className="px-5 py-4 text-right">
                               <button 
-                                // ✨ FIXED: Pushes cleanly to your brand new workspace subdirectory review page route format structure
                                 onClick={() => router.push(`/requester/review/${req.id}`)}
                                 className="p-1.5 border border-gray-200 text-gray-500 hover:text-[#0747A1] hover:border-[#0747A1] bg-white rounded transition-colors cursor-pointer"
                               >
