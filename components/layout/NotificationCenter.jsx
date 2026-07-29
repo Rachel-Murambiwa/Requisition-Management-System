@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { 
@@ -23,8 +23,9 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   const [isOpen, setIsOpen] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState(null);
 
-  // Helper to format timestamps to human-readable strings dynamically
+  // Helper to format timestamps dynamically
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return 'just now';
     const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000);
@@ -36,54 +37,53 @@ export default function NotificationCenter({ role = "finance-officer" }) {
     return new Date(timestamp).toLocaleDateString();
   };
 
-  // 📥 METHOD A: INITIAL DATA FETCH
-  async function loadNotifications() {
+  // 📥 METHOD A: INITIAL DATABASE FETCH
+  const loadNotifications = useCallback(async () => {
     try {
       setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      setUserId(user.id);
+
+      // Fetch real notifications for this user (or fallback to role filter if needed)
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('role', role)
-        .order('created_at', { ascending: false });
+        .or(`user_id.eq.${user.id},role.eq.${role}`)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
       if (error) throw error;
 
-      if (!data || data.length === 0) {
-        // Hydrated with structural staging IDs from your dashboard manifests
-        const fallbacks = {
-          "finance-officer": [
-            { id: 991, type: "stage_1", title: "new request logged", msg: "rachel murambiwa logged a new travel allocation file for bulawayo hub.", created_at: new Date(Date.now() - 60000).toISOString(), read: false, requisition_id: "9E5F33B1" },
-            { id: 992, type: "stage_3", title: "hop approval signed", msg: "head of operations authorized 4 items for harare site visits.", created_at: new Date(Date.now() - 1800000).toISOString(), read: false, requisition_id: "7B9A2C41" }
-          ],
-          requester: [
-            { id: 993, type: "clarification", title: "clarification needed", msg: "fo flagged your attachment for missing validation files.", created_at: new Date(Date.now() - 7200000).toISOString(), read: false, requisition_id: "7B9A2C41" }
-          ]
-        };
-        setAlerts(fallbacks[role] || []);
-      } else {
-        setAlerts(data);
-      }
+      setAlerts(data || []);
     } catch (err) {
-      console.error("database retrieval failure:", err.message);
+      console.error("Database retrieval failure:", err.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, [role, supabase]);
 
   // 📡 METHOD B: REAL-TIME STREAM PIPELINE
   useEffect(() => {
     loadNotifications();
 
-    // ⚡ Hot WebSocket channel pipeline interceptor targeting the live alert matrix
+    if (!userId) return;
+
+    // WebSocket subscription listening for new inserts for this user/role
     const notificationsChannel = supabase
-      .channel('live-internal-alerts')
+      .channel(`realtime_alerts_${userId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `role=eq.${role}`
+          filter: `user_id=eq.${userId}`
         },
         (payload) => {
           setAlerts((currentAlerts) => [payload.new, ...currentAlerts]);
@@ -94,23 +94,23 @@ export default function NotificationCenter({ role = "finance-officer" }) {
     return () => {
       supabase.removeChannel(notificationsChannel);
     };
-  }, [role, supabase]);
+  }, [loadNotifications, userId, supabase]);
 
-  const unreadCount = alerts.filter(a => !a.read).length;
+  // Unread badge count (supports both `is_read` and `read` column conventions)
+  const unreadCount = alerts.filter(a => !(a.is_read ?? a.read)).length;
 
   const handleNotificationClick = async (alert) => {
-    // Optimistic UI change
-    setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
+    // Optimistic UI update
+    setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, is_read: true, read: true } : a));
     setIsOpen(false);
 
-    if (alert.id < 900) {
-      await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', alert.id);
-    }
+    // Update read state in database
+    await supabase
+      .from('notifications')
+      .update({ is_read: true, read: true })
+      .eq('id', alert.id);
 
-    // 🚀 DYNAMIC ROUTE GENERATOR: Resolves specific folder routes with zero hardcoded locks
+    // Dynamic Route Navigation
     if (alert.link) {
       router.push(alert.link);
     } else if (alert.requisition_id) {
@@ -121,12 +121,14 @@ export default function NotificationCenter({ role = "finance-officer" }) {
   };
 
   const markAllRead = async () => {
-    setAlerts(prev => prev.map(a => ({ ...a, read: true })));
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('role', role)
-      .eq('read', false);
+    setAlerts(prev => prev.map(a => ({ ...a, is_read: true, read: true })));
+
+    if (userId) {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true, read: true })
+        .eq('user_id', userId);
+    }
   };
 
   return (
@@ -162,34 +164,39 @@ export default function NotificationCenter({ role = "finance-officer" }) {
                 <span>syncing dynamic streams...</span>
               </div>
             ) : alerts.length > 0 ? (
-              alerts.map((alert) => (
-                <div 
-                  key={alert.id} 
-                  onClick={() => handleNotificationClick(alert)}
-                  className={`p-3 flex gap-3 items-start cursor-pointer hover:bg-gray-50 transition-colors ${alert.read ? 'bg-white' : 'bg-blue-50/30'}`}
-                >
-                  <div className="mt-0.5 shrink-0 select-none">
-                    {alert.type === 'stage_6' && <Sparkles className="w-3.5 h-3.5 text-[#16A34A]" />}
-                    {alert.type === 'clarification' && <MessageSquare className="w-3.5 h-3.5 text-[#991B1B]" />}
-                    {alert.type === 'stage_1' && <Circle className="w-3.5 h-3.5 fill-[#0747A1] text-[#0747A1]" />}
-                    {alert.type === 'stage_3' && <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" />}
-                    {alert.type === 'stage_5' && <Landmark className="w-3.5 h-3.5 text-[#0747A1]" />}
-                    {alert.type === 'stage_4' && <FileText className="w-3.5 h-3.5 text-[#D97706]" />}
-                    {alert.type === 'stage_2' && <Activity className="w-3.5 h-3.5 text-[#0747A1]" />}
-                  </div>
+              alerts.map((alert) => {
+                const isRead = alert.is_read ?? alert.read;
+                const messageText = alert.message || alert.msg;
 
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-[#0A1628] lowercase flex items-center gap-2">
-                      {alert.title}
-                      {!alert.read && <span className="w-1.5 h-1.5 bg-[#0747A1] rounded-full shrink-0" />}
+                return (
+                  <div 
+                    key={alert.id} 
+                    onClick={() => handleNotificationClick(alert)}
+                    className={`p-3 flex gap-3 items-start cursor-pointer hover:bg-gray-50 transition-colors ${isRead ? 'bg-white' : 'bg-blue-50/30'}`}
+                  >
+                    <div className="mt-0.5 shrink-0 select-none">
+                      {alert.type === 'stage_6' && <Sparkles className="w-3.5 h-3.5 text-[#16A34A]" />}
+                      {alert.type === 'clarification' && <MessageSquare className="w-3.5 h-3.5 text-[#991B1B]" />}
+                      {alert.type === 'stage_1' && <Circle className="w-3.5 h-3.5 fill-[#0747A1] text-[#0747A1]" />}
+                      {alert.type === 'stage_3' && <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" />}
+                      {alert.type === 'stage_5' && <Landmark className="w-3.5 h-3.5 text-[#0747A1]" />}
+                      {alert.type === 'stage_4' && <FileText className="w-3.5 h-3.5 text-[#D97706]" />}
+                      {alert.type === 'stage_2' && <Activity className="w-3.5 h-3.5 text-[#0747A1]" />}
                     </div>
-                    <p className="text-gray-600 text-[11px] leading-relaxed lowercase">{alert.msg}</p>
-                    <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">
-                      {alert.time_label || formatTimeAgo(alert.created_at)}
-                    </span>
+
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-[#0A1628] lowercase flex items-center gap-2">
+                        {alert.title}
+                        {!isRead && <span className="w-1.5 h-1.5 bg-[#0747A1] rounded-full shrink-0" />}
+                      </div>
+                      <p className="text-gray-600 text-[11px] leading-relaxed lowercase">{messageText}</p>
+                      <span className="text-[9px] text-[#9CA3AF] font-mono block pt-1 select-none">
+                        {alert.time_label || formatTimeAgo(alert.created_at)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="py-8 px-4 text-center text-gray-400 italic lowercase flex flex-col items-center gap-2 select-none">
                 <Bell className="w-5 h-5 text-gray-300 stroke-[1.5]" />
