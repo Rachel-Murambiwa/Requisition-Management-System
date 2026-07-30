@@ -17,8 +17,7 @@ import {
   Loader2,
   CheckCircle2,
   LogOut,
-  Trash2,
-  DollarSign
+  Trash2
 } from 'lucide-react';
 
 export default function NewRequisitionPage() {
@@ -49,15 +48,17 @@ export default function NewRequisitionPage() {
   const [category, setCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   
-  // 📊 ITEMIZED REQUISITION LEDGER ITEMS (Spreadsheet Table Rows)
+  // 📊 ITEMIZED REQUISITION LEDGER ITEMS (With Quantity, Unit Price, and Grant)
   const [items, setItems] = useState([
     { 
       id: 1, 
       dateRequested: new Date().toISOString().split('T')[0], 
+      grant: '',
       purpose: '', 
       dateRequired: '', 
       hasThreeQuotes: 'No', 
-      amount: '' 
+      quantity: 1,
+      unitPrice: '' 
     }
   ]);
 
@@ -109,10 +110,12 @@ export default function NewRequisitionPage() {
       {
         id: Date.now(),
         dateRequested: new Date().toISOString().split('T')[0],
+        grant: '',
         purpose: '',
         dateRequired: '',
         hasThreeQuotes: 'No',
-        amount: ''
+        quantity: 1,
+        unitPrice: ''
       }
     ]);
   };
@@ -127,8 +130,15 @@ export default function NewRequisitionPage() {
     setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
 
+  // 💰 Helper to compute row total = quantity * unitPrice
+  const getRowTotal = (item) => {
+    const q = parseFloat(item.quantity) || 0;
+    const p = parseFloat(item.unitPrice) || 0;
+    return q * p;
+  };
+
   // 💰 Calculate dynamic itemized total sum
-  const itemizedTotal = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+  const itemizedTotal = items.reduce((sum, item) => sum + getRowTotal(item), 0);
 
   // 🗓️ Calculate total trip duration dynamically
   const calculatedDays = (startDate && endDate) 
@@ -153,7 +163,7 @@ export default function NewRequisitionPage() {
   const finalAmount = requestType === 'travel' ? calculatedTravelTotal : itemizedTotal;
 
   // Determine if ANY line item exceeds $50 or if total exceeds $50
-  const hasLineItemOver50 = items.some(item => (parseFloat(item.amount) || 0) > 50 || item.hasThreeQuotes === 'Yes');
+  const hasLineItemOver50 = items.some(item => getRowTotal(item) > 50 || item.hasThreeQuotes === 'Yes');
   const requiresComplianceDocs = (finalAmount > 50 || hasLineItemOver50) && requestType === 'standard';
 
   const handleSignOut = async () => {
@@ -288,9 +298,9 @@ export default function NewRequisitionPage() {
       }
     } else {
       // Validate spreadsheet items
-      const invalidRows = items.some(item => !item.purpose || !item.amount || parseFloat(item.amount) <= 0);
+      const invalidRows = items.some(item => !item.purpose || getRowTotal(item) <= 0);
       if (invalidRows) {
-        setError('please ensure all rows in the spreadsheet have a valid purpose and monetary amount.');
+        setError('please ensure all rows have a valid purpose, quantity, and unit price resulting in a total > $0.00.');
         return;
       }
       if (!category || !paymentMethod) {
@@ -313,10 +323,16 @@ export default function NewRequisitionPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const compiledDocumentsArray = requestType === 'emergency' ? emergencyDocs : [...quotes, ...vatCerts];
 
+      // Format items with computed row totals for DB storage
+      const formattedItems = items.map(i => ({
+        ...i,
+        totalAmount: getRowTotal(i)
+      }));
+
       // Compile justifications string from itemized rows
       const compiledJustification = requestType === 'travel' 
         ? `travel purpose: ${travelPurpose}. location route: ${travelLocation}.` 
-        : items.map(i => `${i.purpose} ($${parseFloat(i.amount).toFixed(2)})`).join('; ');
+        : formattedItems.map(i => `${i.purpose} (${i.quantity}x @ $${parseFloat(i.unitPrice || 0).toFixed(2)} = $${i.totalAmount.toFixed(2)}) [Grant: ${i.grant || 'N/A'}]`).join('; ');
 
       const { error: insertError } = await supabase
         .from('requisitions')
@@ -331,7 +347,7 @@ export default function NewRequisitionPage() {
           is_emergency: requestType === 'emergency',
           status: 'pending',
           documents: compiledDocumentsArray, 
-          itemized_breakdown: requestType !== 'travel' ? items : null,
+          itemized_breakdown: requestType !== 'travel' ? formattedItems : null,
           travel_meta: requestType === 'travel' ? {
             travelPurpose,
             travelLocation,
@@ -382,7 +398,7 @@ export default function NewRequisitionPage() {
       </nav>
 
       {/* Workspace core */}
-      <main className="max-w-5xl mx-auto px-4 mt-10">
+      <main className="max-w-6xl mx-auto px-4 mt-10">
         
         <div onClick={() => router.push('/requester')} className="inline-flex items-center gap-2 text-xs text-[#4B5563] hover:text-[#0747A1] font-semibold transition-colors cursor-pointer mb-8 select-none">
           <ArrowLeft className="w-4 h-4" /> <span className="lowercase">back to overview</span>
@@ -420,89 +436,117 @@ export default function NewRequisitionPage() {
 
                 {/* Spreadsheet Grid Table */}
                 <div className="border border-gray-200 rounded-b-md overflow-x-auto bg-white shadow-xs">
-                  <table className="w-full text-left text-xs border-collapse font-sans">
+                  <table className="w-full text-left text-xs border-collapse font-sans min-w-[900px]">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-300 text-gray-700 font-bold uppercase tracking-wider">
-                        <th className="p-2.5 border-r border-gray-200 w-32">Date Requested</th>
-                        <th className="p-2.5 border-r border-gray-200 min-w-[140px]">Requester Name</th>
-                        <th className="p-2.5 border-r border-gray-200 min-w-[130px]">Hub/Department</th>
-                        <th className="p-2.5 border-r border-gray-200 min-w-[220px]">Purpose of Funds</th>
-                        <th className="p-2.5 border-r border-gray-200 w-32">Date Required</th>
-                        <th className="p-2.5 border-r border-gray-200 w-28 text-center">Three Quotes?</th>
-                        <th className="p-2.5 border-r border-gray-200 w-32 text-right">Amount (USD)</th>
+                        <th className="p-2.5 border-r border-gray-200 w-28">Date Requested</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[120px]">Requester Name</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[110px]">Hub/Department</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[110px]">Grant</th>
+                        <th className="p-2.5 border-r border-gray-200 min-w-[200px]">Purpose of Funds</th>
+                        <th className="p-2.5 border-r border-gray-200 w-28">Date Required</th>
+                        <th className="p-2.5 border-r border-gray-200 w-24 text-center">Three Quotes?</th>
+                        <th className="p-2.5 border-r border-gray-200 w-20 text-center">Qty</th>
+                        <th className="p-2.5 border-r border-gray-200 w-28 text-right">Unit Price ($)</th>
+                        <th className="p-2.5 border-r border-gray-200 w-28 text-right">Total ($)</th>
                         <th className="p-2.5 text-center w-10"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {items.map((row, index) => (
-                        <tr key={row.id} className={index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'}>
-                          <td className="p-2 border-r border-gray-200">
-                            <input 
-                              type="date" 
-                              value={row.dateRequested} 
-                              onChange={(e) => updateLedgerRow(row.id, 'dateRequested', e.target.value)}
-                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 rounded text-xs focus:bg-white focus:outline-none"
-                            />
-                          </td>
-                          <td className="p-2 border-r border-gray-200 text-gray-600 font-medium">
-                            {activeUser.name}
-                          </td>
-                          <td className="p-2 border-r border-gray-200 text-gray-600 font-medium uppercase">
-                            {activeUser.hub} hub
-                          </td>
-                          <td className="p-2 border-r border-gray-200">
-                            <input 
-                              type="text" 
-                              placeholder="Describe purpose/items..." 
-                              value={row.purpose} 
-                              onChange={(e) => updateLedgerRow(row.id, 'purpose', e.target.value)}
-                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
-                            />
-                          </td>
-                          <td className="p-2 border-r border-gray-200">
-                            <input 
-                              type="date" 
-                              value={row.dateRequired} 
-                              onChange={(e) => updateLedgerRow(row.id, 'dateRequired', e.target.value)}
-                              className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
-                            />
-                          </td>
-                          <td className="p-2 border-r border-gray-200 text-center">
-                            <select 
-                              value={row.hasThreeQuotes} 
-                              onChange={(e) => updateLedgerRow(row.id, 'hasThreeQuotes', e.target.value)}
-                              className="p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs font-bold text-center focus:bg-white focus:outline-none cursor-pointer"
-                            >
-                              <option value="No">No</option>
-                              <option value="Yes">Yes</option>
-                            </select>
-                          </td>
-                          <td className="p-2 border-r border-gray-200 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="text-gray-400 font-mono">$</span>
+                      {items.map((row, index) => {
+                        const computedRowTotal = getRowTotal(row);
+
+                        return (
+                          <tr key={row.id} className={index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'}>
+                            <td className="p-2 border-r border-gray-200">
+                              <input 
+                                type="date" 
+                                value={row.dateRequested} 
+                                onChange={(e) => updateLedgerRow(row.id, 'dateRequested', e.target.value)}
+                                className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 rounded text-xs focus:bg-white focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-gray-600 font-medium truncate">
+                              {activeUser.name}
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-gray-600 font-medium uppercase truncate">
+                              {activeUser.hub} hub
+                            </td>
+                            <td className="p-2 border-r border-gray-200">
+                              <input 
+                                type="text" 
+                                placeholder="Grant source..." 
+                                value={row.grant} 
+                                onChange={(e) => updateLedgerRow(row.id, 'grant', e.target.value)}
+                                className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-2 border-r border-gray-200">
+                              <input 
+                                type="text" 
+                                placeholder="Describe purpose/items..." 
+                                value={row.purpose} 
+                                onChange={(e) => updateLedgerRow(row.id, 'purpose', e.target.value)}
+                                className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-2 border-r border-gray-200">
+                              <input 
+                                type="date" 
+                                value={row.dateRequired} 
+                                onChange={(e) => updateLedgerRow(row.id, 'dateRequired', e.target.value)}
+                                className="w-full p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-center">
+                              <select 
+                                value={row.hasThreeQuotes} 
+                                onChange={(e) => updateLedgerRow(row.id, 'hasThreeQuotes', e.target.value)}
+                                className="p-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs font-bold text-center focus:bg-white focus:outline-none cursor-pointer"
+                              >
+                                <option value="No">No</option>
+                                <option value="Yes">Yes</option>
+                              </select>
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-center">
                               <input 
                                 type="number" 
-                                step="0.01" 
-                                placeholder="0.00" 
-                                value={row.amount} 
-                                onChange={(e) => updateLedgerRow(row.id, 'amount', e.target.value)}
-                                className="w-24 p-1 text-right font-mono font-bold bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                                min="1" 
+                                value={row.quantity} 
+                                onChange={(e) => updateLedgerRow(row.id, 'quantity', e.target.value)}
+                                className="w-14 p-1 text-center font-mono font-bold bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
                               />
-                            </div>
-                          </td>
-                          <td className="p-2 text-center">
-                            {items.length > 1 && (
-                              <button 
-                                type="button" 
-                                onClick={() => removeLedgerRow(row.id)}
-                                className="text-gray-400 hover:text-red-600 bg-transparent border-none cursor-pointer"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-right">
+                              <div className="flex items-center justify-end gap-0.5">
+                                <span className="text-gray-400 font-mono">$</span>
+                                <input 
+                                  type="number" 
+                                  step="0.01" 
+                                  placeholder="0.00" 
+                                  value={row.unitPrice} 
+                                  onChange={(e) => updateLedgerRow(row.id, 'unitPrice', e.target.value)}
+                                  className="w-20 p-1 text-right font-mono font-bold bg-transparent border border-transparent hover:border-gray-300 focus:border-[#0747A1] rounded text-xs focus:bg-white focus:outline-none"
+                                />
+                              </div>
+                            </td>
+                            <td className="p-2 border-r border-gray-200 text-right font-mono font-bold text-[#0A1628] bg-gray-50/50 select-none">
+                              ${computedRowTotal.toFixed(2)}
+                            </td>
+                            <td className="p-2 text-center">
+                              {items.length > 1 && (
+                                <button 
+                                  type="button" 
+                                  onClick={() => removeLedgerRow(row.id)}
+                                  className="text-gray-400 hover:text-red-600 bg-transparent border-none cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
